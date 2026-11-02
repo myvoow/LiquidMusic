@@ -2,21 +2,21 @@
  * LiquidMusic - Liquid Glass for Apple Music (patches compatible with Morphe).
  * Licensed under the GNU General Public License v3.0, see LICENSE.
  *
- * The effect chain (vibrancy -> blur -> lens) and the highlight parameters follow
- * Backdrop by Kyant (Apache License 2.0): https://github.com/Kyant0/AndroidLiquidGlass
+ * The effect chain (vibrancy -> blur -> lens) follows Backdrop by Kyant (Apache License 2.0):
+ * https://github.com/Kyant0/AndroidLiquidGlass
  */
 package app.liquidmusic.extension;
 
 import android.annotation.TargetApi;
-import android.graphics.BlendMode;
-import android.graphics.BlurMaskFilter;
+import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
-import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PixelFormat;
 import android.graphics.RecordingCanvas;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.RenderEffect;
 import android.graphics.RenderNode;
@@ -30,16 +30,22 @@ import android.view.View;
 import android.view.ViewTreeObserver;
 
 import java.lang.ref.WeakReference;
+import java.util.WeakHashMap;
 
 /**
  * Draws one Liquid Glass surface in place of a BlurView.
  * <p>
  * The content behind the surface is not captured again: BlurTarget already records it in a
  * RenderNode on every frame, so this renderer only references that node, offset to the position
- * of the surface, in a node of its own with a padding of one blur radius. The effect chain of that
- * node is, as in Backdrop: saturation (vibrancy), then blur, then the AGSL lens that bends the
- * edges (Android 13+). The result is clipped to the shape of the surface, and a specular rim is
- * drawn over it.
+ * of the surface, in a node of its own with a padding of one blur radius. Like Apple's blur, the
+ * node starts with the window background, so the glass is opaque: without it, everything that
+ * BlurTarget leaves transparent would show the sharp content through the glass. The effect chain
+ * of the node is, as in Backdrop: saturation (vibrancy), then blur, then the AGSL lens that bends
+ * the edges (Android 13+). The result is clipped to the shape of the surface.
+ * <p>
+ * The tab bar and the mini player draw Apple's translucent material over the BlurView. Its layers
+ * are faded on every frame, because Apple resets them whenever the colors of the player change,
+ * and the specular rim is added to the overlay of that view, so the tint does not dim it.
  */
 @TargetApi(Build.VERSION_CODES.S)
 final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.OnAttachStateChangeListener {
@@ -53,15 +59,16 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
     private final RenderNode node = new RenderNode("LiquidGlass");
     private final int[] hostLocation = new int[2];
     private final int[] sourceLocation = new int[2];
+    private final int[] rootLocation = new int[2];
     private final RectF bounds = new RectF();
     private final Path shape = new Path();
-    private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private WeakReference<View> sourceRef = new WeakReference<>(null);
     private RenderNode sourceNode;
     private float drawnOffsetX = Float.NaN;
     private float drawnOffsetY = Float.NaN;
     private boolean listening;
+    private boolean frameErrorLogged;
 
     // Effect cache, rebuilt only when the geometry changes.
     private RenderEffect effect;
@@ -70,17 +77,20 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
     private int effectPadding = -1;
     private float effectCorner = -1f;
 
-    private RuntimeShader highlightShader;
-    private float highlightMaskRadius = -1f;
+    /**
+     * Alpha last written on each faded drawable, shared by all surfaces so that a drawable is
+     * never faded twice. Any other alpha read back was set by Apple, and is faded in turn.
+     */
+    private static final WeakHashMap<Drawable, Integer> WRITTEN_ALPHAS = new WeakHashMap<>();
 
-    private WeakReference<View> tintedViewRef = new WeakReference<>(null);
-    private WeakReference<Drawable> tintedDrawableRef = new WeakReference<>(null);
+    // The view drawn over the glass (tab bar, mini player) and the rim, in its overlay if any.
+    private WeakReference<View> contentRef = new WeakReference<>(null);
+    private GlassRim rim;
+    private WeakReference<View> rimHostRef = new WeakReference<>(null);
 
     GlassRenderer(View host, LiquidGlassPatch.Surface surface) {
         this.hostRef = new WeakReference<>(host);
         this.surface = surface;
-        highlightPaint.setStyle(Paint.Style.STROKE);
-        highlightPaint.setBlendMode(BlendMode.PLUS);
         host.addOnAttachStateChangeListener(this);
     }
 
@@ -106,12 +116,14 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
         final float density = host.getResources().getDisplayMetrics().density;
         final float blurRadius = Math.max(0, LiquidGlassPatch.blurRadiusDp()) * density;
         final int padding = (int) Math.ceil(blurRadius);
-        final float corner = cornerRadius(host, width, height);
+        final float corner = cornerRadius(host.getBackground(), width, height);
 
-        // Reference the content behind the surface, including one blur radius around it.
+        // The window background, then the content behind the surface, with one blur radius
+        // around it so the blur does not fade at the edges.
         node.setPosition(0, 0, width + 2 * padding, height + 2 * padding);
         RecordingCanvas recording = node.beginRecording();
         try {
+            drawWindowBackground(host, recording, padding);
             recording.translate(padding - offsetX, padding - offsetY);
             recording.drawRenderNode(sourceNode);
         } finally {
@@ -129,8 +141,13 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
         canvas.drawRenderNode(node);
         canvas.restoreToCount(save);
 
-        drawHighlight(canvas, width, height, corner, density);
-        lightenTint(host);
+        updateContent(host, density);
+        if (rimHostRef.get() == host) {
+            // No view over the glass: the rim is part of the glass itself.
+            rim.setBounds(0, 0, width, height);
+            rim.setCornerRadius(corner);
+            rim.draw(canvas);
+        }
         return true;
     }
 
@@ -146,6 +163,37 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
         sourceRef = new WeakReference<>(source);
         sourceNode = (RenderNode) recorded;
         return source;
+    }
+
+    /**
+     * Draws what is under BlurTarget, as Apple's blur does with its "frame clear" drawable: the
+     * background of the window, at its place in the window. BlurTarget only records its children,
+     * so without it the glass would be transparent wherever the app draws no background.
+     */
+    @SuppressWarnings("deprecation") // Drawable.getOpacity() is still the way to know if it is opaque.
+    private void drawWindowBackground(View host, RecordingCanvas recording, int padding) {
+        final View root = host.getRootView();
+        final Drawable background = root != null ? root.getBackground() : null;
+        if (background == null || background.getOpacity() != PixelFormat.OPAQUE) {
+            recording.drawColor(windowColor(host));
+        }
+        if (background != null) {
+            // hostLocation was just measured by draw().
+            root.getLocationInWindow(rootLocation);
+            final int save = recording.save();
+            recording.translate(padding + rootLocation[0] - hostLocation[0], padding + rootLocation[1] - hostLocation[1]);
+            background.draw(recording);
+            recording.restoreToCount(save);
+        }
+    }
+
+    private static int windowColor(View host) {
+        TypedArray attributes = host.getContext().obtainStyledAttributes(new int[]{android.R.attr.colorBackground});
+        try {
+            return attributes.getColor(0, Color.BLACK) | 0xFF000000;
+        } finally {
+            attributes.recycle();
+        }
     }
 
     private RenderEffect effect(int width, int height, int padding, float corner, float density, float blurRadius) {
@@ -198,99 +246,109 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
         return RenderEffect.createRuntimeShaderEffect(shader, "content");
     }
 
-    /** Backdrop's Highlight.Default: a 0.5dp rim, white at 50%, added with BlendMode.PLUS. */
-    private void drawHighlight(Canvas canvas, int width, int height, float corner, float density) {
-        final int alpha = clamp(LiquidGlassPatch.highlightPercent(), 0, 100);
-        if (alpha == 0) return;
-
-        highlightPaint.setStrokeWidth((float) Math.ceil(0.5f * density) * 2f);
-        final float maskRadius = 0.25f * density;
-        if (maskRadius != highlightMaskRadius) {
-            highlightPaint.setMaskFilter(new BlurMaskFilter(maskRadius, BlurMaskFilter.Blur.NORMAL));
-            highlightMaskRadius = maskRadius;
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            highlightPaint.setShader(highlightShader(width, height, corner));
-            highlightPaint.setColor(Color.argb(Math.round(0.5f * 255 * alpha / 100f), 255, 255, 255));
-        } else {
-            highlightPaint.setShader(null);
-            highlightPaint.setColor(Color.argb(Math.round(0.38f * 255 * alpha / 100f), 255, 255, 255));
-        }
-
-        final int save = canvas.save();
-        canvas.clipPath(shape);
-        canvas.drawPath(shape, highlightPaint);
-        canvas.restoreToCount(save);
-    }
-
-    @TargetApi(Build.VERSION_CODES.TIRAMISU)
-    private RuntimeShader highlightShader(int width, int height, float corner) {
-        if (highlightShader == null) highlightShader = new RuntimeShader(GlassShaders.HIGHLIGHT);
-        highlightShader.setFloatUniform("size", width, height);
-        highlightShader.setFloatUniform("cornerRadii", corner, corner, corner, corner);
-        highlightShader.setColorUniform("color", Color.WHITE);
-        highlightShader.setFloatUniform("angle", (float) Math.toRadians(45));
-        highlightShader.setFloatUniform("falloff", 1f);
-        return highlightShader;
-    }
+    // region View over the glass: tint and rim
 
     /**
-     * The tab bar and the mini player draw Apple's translucent material (bg_apple_material,
-     * 55 to 60% opaque) over the blur. Its layers are faded so the glass shows through.
+     * Finds the view drawn over the glass, fades its tint and keeps the rim on top of it.
+     * Called on every frame: Apple replaces the material layer and sets the alpha of the artwork
+     * layer again whenever the colors of the tab bar and the mini player change.
      */
-    private void lightenTint(View host) {
-        final String contentName = surface.contentIdName;
-        final int percent = clamp(LiquidGlassPatch.tintOpacityPercent(), 0, 100);
-        if (contentName == null || percent >= 100) return;
+    private void updateContent(View host, float density) {
+        final View content = contentView(host);
 
-        View content = tintedViewRef.get();
-        if (content == null || !content.isAttachedToWindow()) {
-            int id = LiquidGlassPatch.idOf(host, contentName);
-            if (id == 0) return;
-            content = host.getRootView().findViewById(id);
-            if (content == null) return;
-            tintedViewRef = new WeakReference<>(content);
-        }
-
-        Drawable background = content.getBackground();
-        if (background == null || background == tintedDrawableRef.get()) return;
-
-        final int alpha = Math.round(255 * percent / 100f);
-        Drawable mutated = background.mutate();
-        boolean faded = false;
-        if (mutated instanceof LayerDrawable) {
-            LayerDrawable layers = (LayerDrawable) mutated;
-            for (String layerName : TINT_LAYER_NAMES) {
-                int layerId = LiquidGlassPatch.idOf(host, layerName);
-                Drawable layer = layerId != 0 ? layers.findDrawableByLayerId(layerId) : null;
-                if (layer != null) {
-                    layer.setAlpha(alpha);
-                    faded = true;
-                }
+        final int intensity = clamp(LiquidGlassPatch.highlightPercent(), 0, 100);
+        if (intensity > 0) {
+            if (rim == null) rim = new GlassRim(density, intensity);
+            // Over the view drawn on the glass if there is one, otherwise in the glass itself.
+            final View wanted = content != null ? content : host;
+            final View current = rimHostRef.get();
+            if (current != wanted) {
+                if (current != null && current != host) current.getOverlay().remove(rim);
+                if (wanted != host) wanted.getOverlay().add(rim);
+                rimHostRef = new WeakReference<>(wanted);
+            }
+            if (wanted == content) {
+                final int width = content.getWidth();
+                final int height = content.getHeight();
+                final Rect rimBounds = rim.getBounds();
+                if (rimBounds.width() != width || rimBounds.height() != height) rim.setBounds(0, 0, width, height);
+                rim.setCornerRadius(cornerRadius(content.getBackground(), width, height));
             }
         }
-        if (!faded) mutated.setAlpha(alpha);
 
-        tintedDrawableRef = new WeakReference<>(content.getBackground());
-        content.invalidate();
+        if (content != null) fadeTint(host, content.getBackground());
     }
 
-    private static float cornerRadius(View host, int width, int height) {
-        final float max = Math.min(width, height) / 2f;
-        Drawable background = host.getBackground();
-        if (background instanceof GradientDrawable) {
-            float radius = ((GradientDrawable) background).getCornerRadius();
-            if (radius > 0f) return Math.min(radius, max);
+    private View contentView(View host) {
+        final String name = surface.contentIdName;
+        if (name == null) return null;
+        View content = contentRef.get();
+        if (content != null && content.isAttachedToWindow()) return content;
+
+        final int id = LiquidGlassPatch.idOf(host, name);
+        if (id == 0) return null;
+        content = host.getRootView().findViewById(id);
+        if (content == null) return null;
+        contentRef = new WeakReference<>(content);
+        return content;
+    }
+
+    private static void fadeTint(View host, Drawable background) {
+        final int percent = clamp(LiquidGlassPatch.tintOpacityPercent(), 0, 100);
+        if (background == null || percent >= 100) return;
+
+        if (background instanceof LayerDrawable) {
+            final LayerDrawable layers = (LayerDrawable) background;
+            boolean found = false;
+            for (String layerName : TINT_LAYER_NAMES) {
+                final int id = LiquidGlassPatch.idOf(host, layerName);
+                final Drawable layer = id != 0 ? layers.findDrawableByLayerId(id) : null;
+                if (layer == null) continue;
+                found = true;
+                fade(layer, percent);
+            }
+            if (found) return;
         }
-        return max;
+        fade(background, percent);
+    }
+
+    private static void fade(Drawable drawable, int percent) {
+        final int alpha = drawable.getAlpha();
+        final Integer written = WRITTEN_ALPHAS.get(drawable);
+        if (written != null && written == alpha) return;
+        final Drawable mutable = drawable.mutate();
+        final int faded = Math.round(alpha * percent / 100f);
+        mutable.setAlpha(faded);
+        WRITTEN_ALPHAS.put(mutable, faded);
+    }
+
+    // endregion
+
+    private static float cornerRadius(Drawable background, int width, int height) {
+        final float max = Math.min(width, height) / 2f;
+        final float radius = cornerRadiusOf(background);
+        return radius > 0f ? Math.min(radius, max) : max;
+    }
+
+    private static float cornerRadiusOf(Drawable drawable) {
+        if (drawable instanceof GradientDrawable) {
+            return ((GradientDrawable) drawable).getCornerRadius();
+        }
+        if (drawable instanceof LayerDrawable) {
+            final LayerDrawable layers = (LayerDrawable) drawable;
+            for (int i = 0, count = layers.getNumberOfLayers(); i < count; i++) {
+                final float radius = cornerRadiusOf(layers.getDrawable(i));
+                if (radius > 0f) return radius;
+            }
+        }
+        return 0f;
     }
 
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
     }
 
-    // region Position tracking
+    // region Frame tracking
 
     private void startListening(View host) {
         if (listening) return;
@@ -305,19 +363,27 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
     }
 
     /**
-     * The content behind updates by itself (the node references BlurTarget's node), but a move
-     * of the surface, such as the mini player animating, needs the offset to be recorded again.
+     * Runs before every frame. The content behind updates by itself (the node references
+     * BlurTarget's node), but a move of the surface, such as the mini player animating, needs the
+     * offset to be recorded again, and Apple may have reset the tint since the last frame.
      */
     @Override
     public boolean onPreDraw() {
-        View host = hostRef.get();
-        View source = sourceRef.get();
-        if (host == null || source == null || !host.isShown()) return true;
-        host.getLocationInWindow(hostLocation);
-        source.getLocationInWindow(sourceLocation);
-        if (hostLocation[0] - sourceLocation[0] != drawnOffsetX
-                || hostLocation[1] - sourceLocation[1] != drawnOffsetY) {
-            host.invalidate();
+        try {
+            View host = hostRef.get();
+            View source = sourceRef.get();
+            if (host == null || source == null || !host.isShown()) return true;
+            host.getLocationInWindow(hostLocation);
+            source.getLocationInWindow(sourceLocation);
+            if (hostLocation[0] - sourceLocation[0] != drawnOffsetX
+                    || hostLocation[1] - sourceLocation[1] != drawnOffsetY) {
+                host.invalidate();
+            }
+            updateContent(host, host.getResources().getDisplayMetrics().density);
+        } catch (Throwable t) {
+            // Runs on every frame: report the first failure only.
+            if (!frameErrorLogged) android.util.Log.e(LiquidGlassPatch.TAG, "Frame update failed", t);
+            frameErrorLogged = true;
         }
         return true;
     }
@@ -332,8 +398,10 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
         node.discardDisplayList();
         sourceRef = new WeakReference<>(null);
         sourceNode = null;
-        tintedViewRef = new WeakReference<>(null);
-        tintedDrawableRef = new WeakReference<>(null);
+        final View rimHost = rimHostRef.get();
+        if (rim != null && rimHost != null && rimHost != view) rimHost.getOverlay().remove(rim);
+        rimHostRef = new WeakReference<>(null);
+        contentRef = new WeakReference<>(null);
     }
 
     // endregion
