@@ -54,6 +54,9 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
     /** Layers of Apple's bg_apple_material drawable, made more transparent so the glass shows. */
     private static final String[] TINT_LAYER_NAMES = {"material_layer", "artwork_color_scheme_layer"};
 
+    /** The view over the tab bar's BlurView, which the liquid tab bar can replace. */
+    private static final String LIQUID_TAB_BAR_CONTENT = "bottom_nav_view";
+
     private final WeakReference<View> hostRef;
     private final LiquidGlassPatch.Surface surface;
 
@@ -77,12 +80,28 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
     private int effectHeight = -1;
     private int effectPadding = -1;
     private float effectCorner = -1f;
+    private int effectRevision = -1;
+    /** Settings revision the glass was last drawn with. */
+    private int drawnRevision = -1;
 
     /**
-     * Alpha last written on each faded drawable, shared by all surfaces so that a drawable is
-     * never faded twice. Any other alpha read back was set by Apple, and is faded in turn.
+     * The fades written on Apple's drawables, shared by all surfaces so that a drawable is never
+     * faded twice. An alpha read back that differs from the one written was set by Apple, and is
+     * faded in turn.
      */
-    private static final WeakHashMap<Drawable, Integer> WRITTEN_ALPHAS = new WeakHashMap<>();
+    private static final WeakHashMap<Drawable, Fade> FADES = new WeakHashMap<>();
+
+    private static final class Fade {
+        final int appleAlpha;
+        final int writtenAlpha;
+        final int percent;
+
+        Fade(int appleAlpha, int writtenAlpha, int percent) {
+            this.appleAlpha = appleAlpha;
+            this.writtenAlpha = writtenAlpha;
+            this.percent = percent;
+        }
+    }
 
     // The view drawn over the glass (tab bar, mini player) and the rim, in its overlay if any.
     private WeakReference<View> contentRef = new WeakReference<>(null);
@@ -103,6 +122,12 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
         final int height = host.getHeight();
         if (width <= 0 || height <= 0) return false;
 
+        // The liquid tab bar of Backdrop draws its own glass in place of this one.
+        if (LIQUID_TAB_BAR_CONTENT.equals(surface.contentIdName)
+                && LiquidTabBar.replace(host, contentView(host))) {
+            return true;
+        }
+
         View source = resolveSource(host);
         if (source == null) return false;
         startListening(host);
@@ -115,7 +140,7 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
         drawnOffsetY = offsetY;
 
         final float density = host.getResources().getDisplayMetrics().density;
-        final float blurRadius = Math.max(0, LiquidGlassPatch.blurRadiusDp()) * density;
+        final float blurRadius = Math.max(0, LiquidSettings.blurRadiusDp()) * density;
         final int padding = (int) Math.ceil(blurRadius);
         final float corner = cornerRadius(host.getBackground(), width, height);
 
@@ -131,6 +156,7 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
             node.endRecording();
         }
         node.setRenderEffect(effect(width, height, padding, corner, density, blurRadius));
+        drawnRevision = LiquidSettings.getRevision();
 
         bounds.set(0, 0, width, height);
         shape.rewind();
@@ -199,12 +225,13 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
 
     private RenderEffect effect(int width, int height, int padding, float corner, float density, float blurRadius) {
         if (effect != null && width == effectWidth && height == effectHeight
-                && padding == effectPadding && corner == effectCorner) {
+                && padding == effectPadding && corner == effectCorner
+                && effectRevision == LiquidSettings.getRevision()) {
             return effect;
         }
 
         ColorMatrix saturation = new ColorMatrix();
-        saturation.setSaturation(Math.max(0, LiquidGlassPatch.saturationPercent()) / 100f);
+        saturation.setSaturation(Math.max(0, LiquidSettings.saturationPercent()) / 100f);
         RenderEffect chain = RenderEffect.createColorFilterEffect(new ColorMatrixColorFilter(saturation));
 
         if (blurRadius > 0f) {
@@ -221,19 +248,20 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
         effectHeight = height;
         effectPadding = padding;
         effectCorner = corner;
+        effectRevision = LiquidSettings.getRevision();
         return chain;
     }
 
     @TargetApi(Build.VERSION_CODES.TIRAMISU)
     private static RenderEffect lens(int width, int height, int padding, float corner, float density) {
         final float refractionHeight = Math.min(
-                Math.max(0, LiquidGlassPatch.refractionHeightDp()) * density,
+                Math.max(0, LiquidSettings.refractionHeightDp()) * density,
                 Math.min(width, height) / 2f
         );
-        final float refractionAmount = Math.max(0, LiquidGlassPatch.refractionAmountDp()) * density;
+        final float refractionAmount = Math.max(0, LiquidSettings.refractionAmountDp()) * density;
         if (refractionHeight <= 0f || refractionAmount <= 0f) return null;
 
-        final boolean dispersion = LiquidGlassPatch.chromaticAberration();
+        final boolean dispersion = LiquidSettings.chromaticAberration();
         RuntimeShader shader = new RuntimeShader(
                 dispersion ? GlassShaders.REFRACTION_WITH_DISPERSION : GlassShaders.REFRACTION
         );
@@ -257,9 +285,11 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
     private void updateContent(View host, float density) {
         final View content = contentView(host);
 
-        final int intensity = clamp(LiquidGlassPatch.highlightPercent(), 0, 100);
+        final int intensity = clamp(LiquidSettings.highlightPercent(), 0, 100);
+        if (rim != null && intensity == 0) rim.setIntensity(0);
         if (intensity > 0) {
             if (rim == null) rim = new GlassRim(density, intensity);
+            rim.setIntensity(intensity);
             // Over the view drawn on the glass if there is one, otherwise in the glass itself.
             final View wanted = content != null ? content : host;
             final View current = rimHostRef.get();
@@ -273,7 +303,9 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
                 final int height = content.getHeight();
                 final Rect rimBounds = rim.getBounds();
                 if (rimBounds.width() != width || rimBounds.height() != height) rim.setBounds(0, 0, width, height);
-                rim.setCornerRadius(cornerRadius(content.getBackground(), width, height));
+                // The navigation over the tablet sidebar has a plain color: use the glass's corners.
+                final float radius = cornerRadiusOf(content.getBackground());
+                rim.setCornerRadius(radius > 0f ? radius : cornerRadius(host.getBackground(), width, height));
             }
         }
 
@@ -295,8 +327,8 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
     }
 
     private static void fadeTint(View host, Drawable background) {
-        final int percent = clamp(LiquidGlassPatch.tintOpacityPercent(), 0, 100);
-        if (background == null || percent >= 100) return;
+        final int percent = clamp(LiquidSettings.tintOpacityPercent(), 0, 100);
+        if (background == null) return;
 
         if (background instanceof LayerDrawable) {
             final LayerDrawable layers = (LayerDrawable) background;
@@ -315,12 +347,19 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
 
     private static void fade(Drawable drawable, int percent) {
         final int alpha = drawable.getAlpha();
-        final Integer written = WRITTEN_ALPHAS.get(drawable);
-        if (written != null && written == alpha) return;
+        final Fade fade = FADES.get(drawable);
+        final int appleAlpha;
+        if (fade != null && fade.writtenAlpha == alpha) {
+            if (fade.percent == percent) return;
+            appleAlpha = fade.appleAlpha; // The opacity setting changed.
+        } else {
+            if (percent >= 100) return; // Never faded, nothing to do.
+            appleAlpha = alpha;
+        }
         final Drawable mutable = drawable.mutate();
-        final int faded = Math.round(alpha * percent / 100f);
+        final int faded = Math.round(appleAlpha * percent / 100f);
         mutable.setAlpha(faded);
-        WRITTEN_ALPHAS.put(mutable, faded);
+        FADES.put(mutable, new Fade(appleAlpha, faded, percent));
     }
 
     // endregion
@@ -377,7 +416,8 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
             host.getLocationInWindow(hostLocation);
             source.getLocationInWindow(sourceLocation);
             if (hostLocation[0] - sourceLocation[0] != drawnOffsetX
-                    || hostLocation[1] - sourceLocation[1] != drawnOffsetY) {
+                    || hostLocation[1] - sourceLocation[1] != drawnOffsetY
+                    || drawnRevision != LiquidSettings.getRevision()) {
                 host.invalidate();
             }
             updateContent(host, host.getResources().getDisplayMetrics().density);

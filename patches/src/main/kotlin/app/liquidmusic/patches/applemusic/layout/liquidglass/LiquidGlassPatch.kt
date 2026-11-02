@@ -10,6 +10,7 @@ import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.patch.booleanOption
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.intOption
+import app.morphe.patcher.patch.stringOption
 import app.morphe.patcher.util.findFreeRegister
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.returnEarly
@@ -21,9 +22,9 @@ private const val EXTENSION_CLASS = "Lapp/liquidmusic/extension/LiquidGlassPatch
 @Suppress("unused")
 val liquidGlassPatch = bytecodePatch(
     name = "Liquid Glass",
-    description = "Replaces the blur behind the floating tab bar and the mini player with clear " +
-        "Liquid Glass: refracted edges, vibrancy and a specular rim, without blur. " +
-        "Refraction requires Android 13, vibrancy Android 12.",
+    description = "Liquid Glass on the floating tab bar and the mini player: clear glass with refracted " +
+        "edges, vibrancy and a specular rim, and the liquid tab bar of Backdrop by Kyant, with a drop of " +
+        "glass on the active tab. Refraction requires Android 13, the rest Android 12.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_APPLE_MUSIC)
@@ -124,6 +125,65 @@ val liquidGlassPatch = bytecodePatch(
         description = "Also applies the glass to the floating search bar and to the top bar on tablets.",
     )
 
+    val applyToSidebar by booleanOption(
+        key = "applyToSidebar",
+        default = true,
+        title = "Tablet sidebar",
+        description = "Also applies the glass to the sidebar on tablets.",
+    )
+
+    val liquidTabBar by booleanOption(
+        key = "liquidTabBar",
+        default = true,
+        title = "Liquid tab bar",
+        description = "Draws the tab bar with LiquidBottomTabs, the liquid tab bar of Backdrop by Kyant: " +
+            "a drop of glass follows the active tab and can be dragged from tab to tab. " +
+            "Its glass has a light blur of its own.",
+    )
+
+    val tabLabels by booleanOption(
+        key = "tabLabels",
+        default = true,
+        title = "Tab labels",
+        description = "Shows the names of the tabs under their icons in the liquid tab bar.",
+    )
+
+    val hideNewTab by booleanOption(
+        key = "hideNewTab",
+        default = false,
+        title = "Hide the New tab",
+        description = "Removes the New tab from the liquid tab bar.",
+    )
+
+    val hideRadioTab by booleanOption(
+        key = "hideRadioTab",
+        default = false,
+        title = "Hide the Radio tab",
+        description = "Removes the Radio tab from the liquid tab bar.",
+    )
+
+    val startTab by stringOption(
+        key = "startTab",
+        default = "home",
+        values = mapOf(
+            "Home" to "home",
+            "New" to "new",
+            "Radio" to "radio",
+            "Library" to "library",
+            "Search" to "search",
+        ),
+        title = "Start tab",
+        description = "Tab the app opens on, with the liquid tab bar.",
+        required = true,
+    ) { it in setOf("home", "new", "radio", "library", "search") }
+
+    val tabHaptics by booleanOption(
+        key = "tabHaptics",
+        default = true,
+        title = "Haptic feedback",
+        description = "A light tick when the active tab changes, in the liquid tab bar.",
+    )
+
     execute {
         // Draw the glass instead of the original blur.
         //
@@ -169,6 +229,13 @@ val liquidGlassPatch = bytecodePatch(
             method("highlightPercent").returnEarly(highlight!!)
             method("chromaticAberration").returnEarly(chromaticAberration == true)
             method("applyToSearchBar").returnEarly(applyToSearchBar != false)
+            method("applyToSidebar").returnEarly(applyToSidebar != false)
+            method("liquidTabBar").returnEarly(liquidTabBar != false)
+            method("tabLabels").returnEarly(tabLabels != false)
+            method("hideNewTab").returnEarly(hideNewTab == true)
+            method("hideRadioTab").returnEarly(hideRadioTab == true)
+            method("startTab").returnEarly(startTab ?: "home")
+            method("tabHaptics").returnEarly(tabHaptics != false)
         }
     }
 }

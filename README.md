@@ -6,8 +6,8 @@
 <br>
 
 **Real Liquid Glass for Apple Music on Android.**<br>
-Clear glass with refracted edges, vibrancy and a specular rim on the floating tab bar and the mini player,<br>
-packaged as a [Morphe](https://morphe.software) patch.
+Clear glass with refracted edges, vibrancy and a specular rim on the mini player, a liquid tab bar<br>
+with a drop of glass under the active tab, and live settings, packaged as [Morphe](https://morphe.software) patches.
 
 <br>
 
@@ -39,7 +39,7 @@ https://github.com/myvoow/LiquidMusic
 
 1. Add the source (see above).
 2. In Morphe, choose **Apple Music** and give it the APKM. The patch was built on **7.0.0-beta**; Morphe shows later versions as experimental.
-3. Keep **Liquid Glass** selected, and change its [options](#options) if you like.
+3. Keep **Liquid Glass** selected, and change its [options](#options) if you like. **Accent color** and **Liquid Glass icon** are optional.
 4. Uninstall the official Apple Music, since the patched app has a different signature, then install the patched one.
 
 > [!WARNING]
@@ -59,7 +59,35 @@ https://github.com/myvoow/LiquidMusic
 | Edges | flat | bent like a lens (Android 13+) |
 | Tint on top | two layers at 60% | 40% of Apple's tint, also after the player colors change |
 | Rim | thin stroke | specular highlight, drawn over the tint |
-| Surfaces | tab bar, mini player | tab bar, mini player, search bar |
+| Surfaces | tab bar, mini player | tab bar, mini player, search bar, tablet sidebar |
+
+### The liquid tab bar
+
+<p align="center">
+  <img src=".github/assets/liquid-tab-bar.png" alt="The liquid tab bar with its drop on Home, then on Library, and the settings sheet opened over it" width="100%">
+  <br>
+  <sub>The drop moves to the tab you tap, and you can drag it from tab to tab. Long-press the bar to open the settings.</sub>
+</p>
+
+The tab bar is drawn by [`LiquidBottomTabs`](https://github.com/Kyant0/AndroidLiquidGlass), the liquid tab bar by Kyant, used as is: a capsule of glass with a drop under the active tab, which stretches when you drag it. Apple's own tab bar stays underneath and still does the navigation, so tapping a tab, tapping it again to go back to the top, and Apple switching tabs by itself all keep working.
+
+- **Labels** under the icons, in Apple's font (can be turned off).
+- **Hide New** and **Hide Radio** to keep only the tabs you use.
+- **Start tab**: open the app on Home, New, Radio, Library or Search.
+- **Haptics**: a light tick when the active tab changes.
+
+Kyant's bar adds a light blur of its own to its glass. If you want the clear glass on the tab bar too, turn **Liquid tab bar** off: you get Apple's tab bar with the same clear glass as the mini player.
+
+### Settings inside Apple Music
+
+**Long-press the tab bar** to open the Liquid Glass settings: a glass sheet with Kyant's sliders, toggles and buttons. Changes apply at once to the glass under it, and stay after the app restarts. **Reset** goes back to the values chosen in Morphe; **Done** or Back closes the sheet. The "Search bar" and "Tablet sidebar" switches apply the next time those screens open.
+
+### Other patches
+
+| Patch | What it does |
+|---|---|
+| **Accent color** | Replaces Apple Music's red (buttons, links, selection, progress) with another color, blue by default, separately for the dark and light themes. |
+| **Liquid Glass icon** | Replaces the app icon with the LiquidMusic icon, a drop of glass over the colors, with a themed icon for Android 13+. |
 
 | Android | Result |
 |:---:|---|
@@ -81,6 +109,15 @@ Every option can be changed in Morphe before patching.
 | Edge highlight | 100% | Brightness of the rim light |
 | Chromatic aberration | off | Splits the colors of the edges like a prism (Android 13+) |
 | Search bar | on | Also covers the floating search bar and the tablet top bar |
+| Tablet sidebar | on | Also covers the sidebar on tablets |
+| Liquid tab bar | on | Draws the tab bar with Kyant's `LiquidBottomTabs` and its drop |
+| Tab labels | on | Names under the icons of the liquid tab bar |
+| Hide New tab | off | Removes New from the liquid tab bar |
+| Hide Radio tab | off | Removes Radio from the liquid tab bar |
+| Start tab | Home | Tab shown when the app opens |
+| Haptic feedback | on | Light tick when the active tab changes |
+
+These are the starting values: all of them can also be changed later in the app, with a long press on the tab bar.
 
 ## Patches
 
@@ -122,6 +159,8 @@ flowchart LR
 
 The window background goes first, as in Apple's blur, so the glass is opaque: what is right behind its edges does not show through, only the content the lens bends there. Apple's translucent material is faded on every frame, because Apple sets it again whenever the colors of the player change, and the rim is drawn over it. If anything goes wrong (an unknown view, Android 11, an error), the extension hands drawing back to Apple's blur, so the app never crashes because of the patch.
 
+The liquid tab bar is Jetpack Compose code, bundled in the extension with Kyant's components. R8 moves all of it (Compose included) to `app.liquidmusic.shaded`, and its resources get their own package id (`0x7e`), so nothing clashes with the Compose copy already inside Apple Music. It sits in a `ComposeView` next to Apple's `BottomNavigationView`, which stops drawing but keeps navigating, and follows it on every frame. The glass of the bar records the same `BlurTarget` content as the rest.
+
 Full write-up: [PLAN.md](PLAN.md) and [the Apple Music 7.0.0-beta analysis](docs/apple-music-7.0.0-beta.md).
 
 ## FAQ
@@ -162,7 +201,7 @@ The extra work is limited to the area of the pills, and the default glass has no
 
 ## Credits
 
-- [Backdrop (AndroidLiquidGlass)](https://github.com/Kyant0/AndroidLiquidGlass) by Kyant: the AGSL shaders and the parameters of the effect.
+- [Backdrop (AndroidLiquidGlass)](https://github.com/Kyant0/AndroidLiquidGlass) by Kyant: the liquid tab bar (`LiquidBottomTabs`), the sliders, toggles and buttons of the settings, the glass library behind them, and the AGSL shaders. Their source files are copied unchanged in [`libs/`](libs/README.md).
 - [Morphe](https://morphe.software): the patcher, the manager and the patch template.
 - [BlurView](https://github.com/Dimezis/BlurView) by Dimezis: the blur library inside Apple Music that the patch builds on.
 
@@ -174,13 +213,15 @@ The project follows the official [Morphe patches template](https://github.com/Mo
 
 ```
 patches/              # Morphe patches (Kotlin) → patches-<version>.mpp
-extensions/           # Android code bundled into the patched app (Java) → liquidglass.mpe
+extensions/           # Android code bundled into the patched app (Java, Kotlin, Compose) → liquidglass.mpe
+libs/                 # Backdrop by Kyant, source files copied unchanged (see libs/README.md)
 tools/*.py            # APK analysis with no dependencies (Python stdlib)
 tools/glass-preview/  # renders the glass on the JVM, without a phone
+tools/icon/           # renders the launcher icon (node tools/icon/render.js)
 docs/                 # analysis of each Apple Music version
 ```
 
-**Previewing the glass.** `./gradlew -p tools/glass-preview testDebugUnitTest` draws the tab bar and the mini player over album covers, with Apple's blur and with the glass, and writes the images to `tools/glass-preview/build/preview/`. Robolectric runs Android's real renderer (hwui), so RenderNode, RenderEffect and the AGSL shaders really execute. The views stand in for Apple Music's: same class names, same fields, same resources. The test also fails if what is right behind the glass shows through it, or if Apple's tint is not faded after a color change. Both bugs reached a phone in 1.0.1. It needs an Android SDK, and nothing from Apple.
+**Previewing the glass.** `./gradlew -p tools/glass-preview testDebugUnitTest` draws the tab bar and the mini player over album covers, with Apple's blur and with the glass, and writes the images to `tools/glass-preview/build/preview/`. Robolectric runs Android's real renderer (hwui), so RenderNode, RenderEffect and the AGSL shaders really execute. The views stand in for Apple Music's: same class names, same fields, same resources. The test also fails if what is right behind the glass shows through it, or if Apple's tint is not faded after a color change. Both bugs reached a phone in 1.0.1. Other tests tap and long-press the liquid tab bar: a tap must select the tab in Apple's bar, and a long press must open the settings sheet, whose changes must apply at once. It needs an Android SDK, and nothing from Apple.
 
 **Building locally.** Run `./gradlew buildAndroid`. You need an Android SDK and a GitHub token with `read:packages` in `~/.gradle/gradle.properties` (`gpr.user`, `gpr.key`) to download the Morphe plugin. The output is `patches/build/libs/patches-*.mpp`, which you can test with [Morphe Desktop](https://github.com/MorpheApp/morphe-desktop).
 
@@ -197,6 +238,6 @@ python3 -I tools/dex_inspect.py "Apple Music.apkm" class 'Leightbitlab/com/blurv
 
 ## License
 
-GPLv3, see [LICENSE](LICENSE). The shaders ported from Backdrop stay under Apache-2.0, and the Morphe template adds a naming condition ([NOTICE](NOTICE)).
+GPLv3, see [LICENSE](LICENSE). The code of Backdrop in `libs/` and the shaders ported from it stay under Apache-2.0, and the Morphe template adds a naming condition ([NOTICE](NOTICE)).
 
 LiquidMusic is an independent project, compatible with Morphe and not affiliated with Morphe or Apple. Apple Music is a trademark of Apple Inc. This repository contains no part of the Apple Music app: you patch your own copy.

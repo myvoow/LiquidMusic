@@ -4,7 +4,7 @@
  *
  *   ./gradlew -p tools/glass-preview testDebugUnitTest
  *
- * Writes build/preview/*.png. Needs an Android SDK (ANDROID_HOME or local.properties).
+ * Writes the images to build/preview. Needs an Android SDK (ANDROID_HOME or local.properties).
  */
 pluginManagement {
     repositories {
@@ -22,3 +22,9 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "glass-preview"
+
+// Backdrop by Kyant, as the extension uses it.
+include(":libs:backdrop", ":libs:backdrop-catalog")
+project(":libs").projectDir = file("../../libs")
+project(":libs:backdrop").projectDir = file("../../libs/backdrop")
+project(":libs:backdrop-catalog").projectDir = file("../../libs/backdrop-catalog")

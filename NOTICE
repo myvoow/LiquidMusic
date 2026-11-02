@@ -36,7 +36,10 @@ Backdrop (AndroidLiquidGlass)
 -----------------------------
 
 The AGSL shaders in extensions/liquidglass (GlassShaders.java) and the parameters of the
-glass effect are ported from Backdrop by Kyant (https://github.com/Kyant0/AndroidLiquidGlass):
+glass effect are ported from Backdrop by Kyant (https://github.com/Kyant0/AndroidLiquidGlass).
+libs/backdrop and libs/backdrop-catalog contain copies of its source files, unchanged, from
+commit 65ab177e (see libs/README.md); only the Gradle build files around them are ours.
+LiquidBottomTabs, LiquidButton, LiquidSlider and LiquidToggle come from its catalog app.
 
   Copyright 2025 Kyant
 

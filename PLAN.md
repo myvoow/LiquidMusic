@@ -99,10 +99,15 @@ The Manager options reach the extension: the patch replaces the bodies of its ge
 | Edge highlight | 100% | Intensity of the rim light |
 | Chromatic aberration | off | Prism-like dispersion of the edges (Android 13+) |
 | Search bar | on | Also applies the glass to `floating_search_bar_blur` and `top_nav_blur` (tablet) |
+| Tablet sidebar | on | Also applies the glass to `drawer_blur`, with `drawer_nav_view` over it |
+| Liquid tab bar | on | `LiquidBottomTabs` of Backdrop in place of the drawing of `bottom_nav_view` |
+| Tab labels, Hide New, Hide Radio, Start tab, Haptics | on, off, off, Home, on | Options of the liquid tab bar |
+
+The options are the starting values. The extension keeps the changes made in the app (long press on the tab bar) in the `liquidmusic` SharedPreferences, and falls back to the patched values.
 
 ### The extension (runs inside Apple Music)
 
-1. Target: the resource name of the BlurView. Always `bottom_nav_blur` and `mini_player_blur`; optionally `floating_search_bar_blur` and `top_nav_blur`. Other BlurViews, such as `drawer_blur`, keep Apple's blur.
+1. Target: the resource name of the BlurView. Always `bottom_nav_blur` and `mini_player_blur`; optionally `floating_search_bar_blur`, `top_nav_blur` and `drawer_blur` (tablet sidebar). Other BlurViews keep Apple's blur.
 2. Source: the `BlurTarget` that Apple set up. The extension reads it from the controller of the BlurView (the only field with an interface type), or else looks for a neighbouring `BlurTarget`. It then takes the `RenderNode` field of the target, found by type.
 3. Rendering:
    - a `RenderNode` the size of the pill plus one blur radius, which first draws the window background (as Apple's "frame clear" drawable does), then references the node of the BlurTarget at the right offset;
@@ -111,7 +116,10 @@ The Manager options reach the extension: the patch replaces the bodies of its ge
    - Backdrop's highlight: a 0.5 dp stroke, AGSL shader, `BlendMode.PLUS`, in the overlay of `bottom_nav_view` / `mini_player_content`, so Apple's tint does not dim it.
 4. Tint: the `material_layer` and `artwork_color_scheme_layer` layers of the `bottom_nav_view` / `mini_player_content` background go to the chosen opacity, checked before every frame.
 5. Movement: an `OnPreDrawListener` redraws the pill when its position changes (mini player animation). Scrolling content needs nothing extra, since it propagates through the `RenderNode`.
-6. Safety: on Android < 12, on a software canvas, for an unknown view or after an exception, the extension returns `false` and BlurView draws its original blur. The patch cannot crash the app.
+6. Liquid tab bar: for `bottom_nav_blur`, the extension adds a `ComposeView` after `bottom_nav_view` in its parent, which draws `LiquidBottomTabs` from Backdrop (copied unchanged in `libs/`). `bottom_nav_view` gets empty clip bounds so it stops drawing, but keeps its touch-free role in navigation: the bar reads its menu (`getMenu`), and calls `setSelectedItemId` by reflection; these public methods keep their names in the obfuscated app. The overlay follows the position, visibility, alpha and elevation of `bottom_nav_view` on every frame. The glass of the bar draws the window background and the `BlurTarget` node in a hidden `layerBackdrop`.
+   - Compose inside Apple Music: the `ComposeView` has its own lifecycle and saved-state owners and an explicit recomposer, since Apple registers its own owners on the root view. R8 repackages everything to `app.liquidmusic.shaded` (0 class in common with Apple's dex), aapt2 gives the extension resources package id `0x7e`, and the AndroidX startup provider and profile installer are removed from the manifest.
+7. Settings: a long press on the liquid tab bar opens a `ComposeView` over the decor view, with `LiquidSlider`, `LiquidToggle` and `LiquidButton`. A settings revision (Compose state) invalidates the glass and the bar when a value changes. Apple's settings screen is not used: it is built in code, not from preference XML.
+8. Safety: on Android < 12, on a software canvas, for an unknown view or after an exception, the extension returns `false` and BlurView draws its original blur. The patch cannot crash the app.
 
 ---
 
@@ -143,7 +151,8 @@ The Manager options reach the extension: the patch replaces the bodies of its ge
 7. Optional:
    - sign the Releases (`generateSigningKey`);
    - add a `patches-bundle.png` icon;
-   - add the liquid selection drop under the active tab (port of `LiquidBottomTabs`).
+   - ~~add the liquid selection drop under the active tab~~: done in 1.2.0, with Kyant's `LiquidBottomTabs` unchanged;
+   - shrink the tab bar on scroll, and round glass buttons in the player: not done. Both need hooks into Apple's obfuscated scroll and player code, which change with every version.
 
 ---
 

@@ -46,6 +46,15 @@ ConstraintLayout                     @id/content_container
 
 The tablet variants (`layout-w600dp`, `layout-w675dp`, `layout-w735dp`) follow the same principle. Other `BlurView`s exist: `top_nav_blur`, `floating_search_bar_blur` (floating search bar) and `drawer_blur` (main activity). They can get the same treatment.
 
+In `layout-w600dp/activity_main.xml`, `drawer_blur` (background `bg_corner_radius_xxl`) sits next to `blur_target` in `main_container`, and the `NavigationView` `drawer_nav_view` (background `apple_material_background_thick`) is drawn over it by the `DrawerLayout`: the same pattern as the tab bar.
+
+Other facts used by 1.2.0:
+
+- `BottomNavigationView` is obfuscated (`vf.j`), but its public `getMenu()`, `getSelectedItemId()` and `setSelectedItemId(int)` keep their names. The menu items are `action_listen_now_deprecated` (Home), `action_browse_deprecated` (New), `action_multiply_radio_deprecated` (Radio), `action_library_deprecated` (Library) and `search_fragment_deprecated` (Search).
+- The accent of the app is `key_color_dark` (`#fffa2d48`) and `key_color_light` (`#fffa233b`) in `values/colors.xml`; `color_primary` and the other accents point to them, and `color_primary_disabled` repeats the red in `values` and `values-night`.
+- The launcher icon is `mipmap-anydpi-v26/ic_launcher.xml` (adaptive: `music_appicon_background`, `music_appicon_foreground`, which is also the monochrome layer), with raster `ic_launcher` and `ic_launcher_round` in every density.
+- Apple's settings screen is built in code. Only the Dolby Atmos, karaoke and debug screens load preference XML.
+
 ### Where the near-opaque look comes from
 
 Drawing order of a pill:

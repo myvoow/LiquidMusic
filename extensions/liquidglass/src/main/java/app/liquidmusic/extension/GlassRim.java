@@ -37,7 +37,7 @@ final class GlassRim extends Drawable {
     private final Path path = new Path();
     private final RectF rect = new RectF();
     private final float strokeWidth;
-    private final int intensityPercent;
+    private int intensityPercent;
     private RuntimeShader shader;
     private float cornerRadius = Float.MAX_VALUE;
 
@@ -49,6 +49,14 @@ final class GlassRim extends Drawable {
         paint.setStrokeWidth(strokeWidth);
         paint.setBlendMode(BlendMode.PLUS);
         paint.setMaskFilter(new BlurMaskFilter(Math.max(0.25f * density, 0.5f), BlurMaskFilter.Blur.NORMAL));
+    }
+
+    /** Intensity of the light, in percent of Backdrop's default rim. */
+    void setIntensity(int percent) {
+        if (percent != intensityPercent) {
+            intensityPercent = percent;
+            invalidateSelf();
+        }
     }
 
     /** Corner radius of the shape; larger values are clamped to a capsule. */

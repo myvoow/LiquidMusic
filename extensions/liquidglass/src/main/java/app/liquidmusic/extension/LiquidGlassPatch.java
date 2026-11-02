@@ -72,6 +72,41 @@ public final class LiquidGlassPatch {
         return true;
     }
 
+    /** Also applies the glass to the sidebar of tablets. */
+    public static boolean applyToSidebar() {
+        return true;
+    }
+
+    /** Draws the tab bar with LiquidBottomTabs, the liquid tab bar of Backdrop, and its drop. */
+    public static boolean liquidTabBar() {
+        return true;
+    }
+
+    /** Shows the names of the tabs under their icons, in the liquid tab bar. */
+    public static boolean tabLabels() {
+        return true;
+    }
+
+    /** Hides the New tab from the liquid tab bar. */
+    public static boolean hideNewTab() {
+        return false;
+    }
+
+    /** Hides the Radio tab from the liquid tab bar. */
+    public static boolean hideRadioTab() {
+        return false;
+    }
+
+    /** Tab selected when the app starts: home, new, radio, library or search. */
+    public static String startTab() {
+        return "home";
+    }
+
+    /** Light haptic feedback when the active tab changes. */
+    public static boolean tabHaptics() {
+        return true;
+    }
+
     // endregion
 
     /**
@@ -88,6 +123,7 @@ public final class LiquidGlassPatch {
         }
     }
 
+    private static final String SIDEBAR = "drawer_blur";
     private static final Map<String, Surface> SURFACES = new HashMap<>();
 
     static {
@@ -97,6 +133,8 @@ public final class LiquidGlassPatch {
         // fragment_landing_search.xml and the tablet layouts.
         SURFACES.put("floating_search_bar_blur", new Surface(null, true));
         SURFACES.put("top_nav_blur", new Surface(null, true));
+        // layout-w600dp/activity_main.xml: the sidebar of tablets, with the navigation over it.
+        SURFACES.put(SIDEBAR, new Surface("drawer_nav_view", false));
     }
 
     private static final WeakHashMap<View, GlassRenderer> RENDERERS = new WeakHashMap<>();
@@ -117,6 +155,7 @@ public final class LiquidGlassPatch {
 
         try {
             if (SKIPPED.containsKey(blurView)) return false;
+            LiquidSettings.init(blurView.getContext());
 
             GlassRenderer renderer = RENDERERS.get(blurView);
             if (renderer == null) {
@@ -148,7 +187,8 @@ public final class LiquidGlassPatch {
             return null;
         }
         Surface surface = SURFACES.get(name);
-        if (surface == null || (surface.optional && !applyToSearchBar())) return null;
+        if (surface == null || (surface.optional && !LiquidSettings.applyToSearchBar())) return null;
+        if (SIDEBAR.equals(name) && !LiquidSettings.applyToSidebar()) return null;
         return surface;
     }
 

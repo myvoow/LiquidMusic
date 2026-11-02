@@ -30,3 +30,7 @@ settings {
         proguardFiles(rootProject.projectDir.resolve("extensions/proguard-rules.pro").toString())
     }
 }
+
+// Backdrop by Kyant (AndroidLiquidGlass), copied unchanged, bundled into the extension.
+// Outside extensions/: the Morphe plugin turns every project in there into an extension.
+include(":libs:backdrop", ":libs:backdrop-catalog")
