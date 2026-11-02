@@ -85,7 +85,7 @@ Every option can be changed in Morphe before patching.
 ## Patches
 
 <!-- PATCHES_START EXPANDED -->
-> **[v1.0.2](https://github.com/myvoow/LiquidMusic/releases/tag/v1.0.2)**&nbsp;&nbsp;•&nbsp;&nbsp;`main`&nbsp;&nbsp;•&nbsp;&nbsp;1 patches total
+> **[v1.1.0](https://github.com/myvoow/LiquidMusic/releases/tag/v1.1.0)**&nbsp;&nbsp;•&nbsp;&nbsp;`main`&nbsp;&nbsp;•&nbsp;&nbsp;1 patches total
 <details open>
 <summary>📦 Apple Music&nbsp;&nbsp;•&nbsp;&nbsp;1 patch</summary>
 <br>
@@ -100,7 +100,7 @@ Every option can be changed in Morphe before patching.
 
 | 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |
 |----------|----------------|-----------|
-| [Liquid Glass](#liquid-glass) | Replaces the blur behind the floating tab bar and the mini player with Liquid Glass: refracted edges, blur, vibrancy and a specular rim. Refraction requires Android 13, blur and vibrancy Android 12. | • Blur radius<br>• Refraction width<br>• Refraction strength<br>• Vibrancy<br>• Tint opacity<br>• Edge highlight<br>• Chromatic aberration<br>• Search bar |
+| [Liquid Glass](#liquid-glass) | Replaces the blur behind the floating tab bar and the mini player with clear Liquid Glass: refracted edges, vibrancy and a specular rim, without blur. Refraction requires Android 13, vibrancy Android 12. | • Blur radius<br>• Refraction width<br>• Refraction strength<br>• Vibrancy<br>• Tint opacity<br>• Edge highlight<br>• Chromatic aberration<br>• Search bar |
 
 </details>
 

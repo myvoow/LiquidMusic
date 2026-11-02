@@ -1,10 +1,10 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "patches": [
     {
       "name": "Liquid Glass",
-      "description": "Replaces the blur behind the floating tab bar and the mini player with Liquid Glass: refracted edges, blur, vibrancy and a specular rim. Refraction requires Android 13, blur and vibrancy Android 12.",
+      "description": "Replaces the blur behind the floating tab bar and the mini player with clear Liquid Glass: refracted edges, vibrancy and a specular rim, without blur. Refraction requires Android 13, vibrancy Android 12.",
       "default": true,
       "category": null,
       "compatiblePackages": [
@@ -38,14 +38,14 @@
         {
           "key": "blurRadius",
           "title": "Blur radius",
-          "description": "Blur of the content behind the glass, in dp.",
+          "description": "Blur of the content behind the glass, in dp. Off keeps the glass clear, as Liquid Glass.",
           "required": true,
           "type": "kotlin.Int",
-          "default": 8,
+          "default": 0,
           "values": {
-            "Subtle": 4,
-            "Default": 8,
-            "Frosted": 16
+            "Off": 0,
+            "Light": 4,
+            "Frosted": 12
           }
         },
         {

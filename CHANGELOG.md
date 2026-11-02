@@ -1,3 +1,9 @@
+## [1.1.0](https://github.com/myvoow/LiquidMusic/compare/v1.0.2...v1.1.0) (2026-11-02)
+
+### ✨ New Features
+
+* Make the glass clear, without blur ([cff9676](https://github.com/myvoow/LiquidMusic/commit/cff9676e2ec3b56ec196b07dcb6d172646e76bef))
+
 ## [1.0.2](https://github.com/myvoow/LiquidMusic/compare/v1.0.1...v1.0.2) (2026-11-02)
 
 ### 🐛 Bug Fixes
