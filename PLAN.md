@@ -1,194 +1,155 @@
 # LiquidMusic : du vrai Liquid Glass dans Apple Music Android
 
-Objectif : remplacer le fond de la **barre d'onglets flottante** (Accueil / Nouveautés / Radio / Bibliothèque / Recherche) et du **mini-player flottant** d'Apple Music Android par un vrai effet Liquid Glass : flou, réfraction sur les bords, saturation, reflet, comme sur iOS 26/27. Le rendu est porté de [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) (bibliothèque *Backdrop*, Apache-2.0).
+Objectif : remplacer le fond de la **barre d'onglets flottante** et du **mini-player flottant** d'Apple Music Android par un vrai effet Liquid Glass (flou, réfraction sur les bords, saturation, reflet), comme sur iOS 26/27. Le rendu est porté de [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) (*Backdrop*, Apache-2.0).
+
+**Choix de distribution : un patch [Morphe](https://morphe.software)**, publié par ce dépôt. Les utilisateurs ajoutent `myvoow/LiquidMusic` comme source dans Morphe Manager et appliquent le patch **Liquid Glass** à leur APKM Apple Music.
 
 Analyse détaillée de l'APK : [`docs/apple-music-7.0.0-beta.md`](docs/apple-music-7.0.0-beta.md).
 
 ---
 
-## 1. Verdict : **faisable, et plus simple que prévu**
+## 1. Verdict
 
-L'APKM **Apple Music 7.0.0-beta** (versionCode 1606, minSdk 30, targetSdk 36) a été analysé.
+**Faisable, et c'est implémenté.**
 
-- La barre (`bottom_nav_view`, une `BottomNavigationView`) et le mini-player (`mini_player_content`) sont des **vues Android classiques**, pas du Compose.
-- Apple utilise déjà **BlurView v3** : un `BlurTarget` (`blur_target`) enregistre tout le contenu dans un `RenderNode`, et deux `BlurView` en forme de pilule (`bottom_nav_blur`, `mini_player_blur`) le floutent sous la barre et le mini-player.
-- L'aspect « à peine translucide » vient d'un **flou de 16 px seulement**, recouvert de **deux couches de teinte à 55-60 %** (`bg_apple_material`).
+L'APKM Apple Music 7.0.0-beta (versionCode 1606, minSdk 30) utilise des vues classiques pour la barre d'onglets (`bottom_nav_view`) et le mini-player (`mini_player_content`). Il les floute déjà avec **BlurView v3** :
 
-On garde donc toute l'infrastructure d'Apple. Il suffit de :
+- un `BlurTarget` (`blur_target`) enregistre le contenu dans un `RenderNode` ;
+- deux `BlurView` en pilule (`bottom_nav_blur`, `mini_player_blur`) le floutent ;
+- l'aspect presque opaque vient d'un flou de 16 px recouvert de deux couches de teinte à 55-60 % (`bg_apple_material`).
 
-1. **remplacer l'effet** des deux BlurView (flou → saturation + flou + réfraction AGSL + reflet) ;
-2. **éclaircir la teinte** posée par-dessus.
-
-| | Avant analyse | Après analyse |
-|---|---|---|
-| Cas | A (Views) ou B (Compose) ? | **A confirmé**, infrastructure de flou déjà présente |
-| Effort | 1 à 2 semaines (A) / 3 à 6 (B) | **~1 semaine** pour une première version |
-| Robustesse | Moyenne | Bonne : hooks sur noms stables (`BlurView.draw`, ids de ressources) et champs retrouvés par type |
+Le patch garde cette infrastructure. Il remplace seulement le **dessin** des BlurView par du Liquid Glass et éclaircit la teinte.
 
 Selon la version d'Android :
 
-- **Android 13+ (API 33)** : rendu complet, avec la réfraction (shaders AGSL) ;
-- **Android 12 (API 31-32)** : flou et saturation, sans réfraction ;
-- **Android 11 (API 30, minimum de l'app)** : rendu Apple d'origine.
+- **13+** : rendu complet ;
+- **12** : flou, vibrance et reflet, sans réfraction ;
+- **11** : rendu Apple d'origine.
 
-### Point d'attention : Play Integrity
+### ⚠️ Risque principal : Play Integrity
 
-Apple Music envoie un jeton **Play Integrity** (`AppIntegrityManager`, `appIntegrityToken`) dans ses flux compte et commerce. Un APK **re-signé** sera vu comme « non reconnu », ce qui fera probablement échouer la connexion ou l'abonnement. Il faut donc le **module LSPosed avec root**, qui ne modifie pas l'APK. La voie sans root (LSPatch) reste à tester, mais elle a peu de chances de marcher.
+Morphe **re-signe** l'APK. Or Apple Music envoie un jeton Play Integrity (`AppIntegrityManager`, `appIntegrityToken`) dans ses flux compte et commerce. Apple peut donc refuser la connexion ou l'abonnement d'une copie re-signée. **Ce n'est pas encore testé** : c'est la première chose à vérifier sur un appareil (§4). Si ça bloque, le même code d'extension peut être livré en module LSPosed, qui ne re-signe pas l'APK (§5).
 
 ---
 
-## 2. Ce qu'on reprend d'AndroidLiquidGlass
+## 2. Comment fonctionne Morphe (analysé sur les dépôts MorpheApp, novembre 2026)
 
-Repo analysé : `Kyant0/AndroidLiquidGlass` @ `65ab177`, artefact `io.github.kyant0:backdrop:2.0.1`.
-
-La bibliothèque est **Compose uniquement** (`Modifier.layerBackdrop` / `Modifier.drawBackdrop`), donc inutilisable telle quelle dans les vues d'Apple. On **porte ses algorithmes** vers l'API `android.graphics` :
-
-| Backdrop | Portage |
+| Élément | Rôle |
 |---|---|
-| `vibrancy()` (matrice de saturation ×1,5) | `RenderEffect.createColorFilterEffect(ColorMatrixColorFilter)` |
-| `blur(r)` | `RenderEffect.createBlurEffect(r, r, CLAMP)` |
-| `lens(height, amount, chromaticAberration)` : `RoundedRectRefractionShaderString` / `…WithDispersion` (`internal/Shaders.kt`) | `RuntimeShader` AGSL + `RenderEffect.createRuntimeShaderEffect(shader, "content")` ; uniforms `size`, `offset`, `cornerRadii`, `refractionHeight`, `refractionAmount` (négatif), `depthEffect` |
-| `Highlight` (`DefaultHighlightShaderString`, `AmbientHighlightShaderString`) | shader AGSL dessiné avec un `Paint` sur le contour de la pilule |
-| `Shadow` / `InnerShadow` | `Paint` + `BlurMaskFilter`, ou ombre d'élévation existante |
-| Exemple `LiquidBottomTabs` : `vibrancy → blur(8dp) → lens(24dp, 24dp)`, teinte `#121212` à 40 % (sombre) / `#FAFAFA` à 40 % (clair) | Valeurs par défaut du mod, réglables |
-| `DampedDragAnimation`, `InteractiveHighlight` (goutte de sélection, reflet sous le doigt) | Phase 3 (optionnelle) |
+| [morphe-patcher](https://github.com/MorpheApp/morphe-patcher) 2.1.0 | Bibliothèque qui applique les patches : bytecode (smali/dexlib2), ressources, fichiers bruts. Hard fork de ReVanced Patcher, paquet `app.morphe.*` |
+| [morphe-patches-gradle-plugin](https://github.com/MorpheApp/morphe-patches-gradle-plugin) `app.morphe.patches` 2.1.0 | Configure le projet : `patches/` (Kotlin, compilé en `.mpp` = jar + dex via D8) et `extensions/*` (modules Android compilés en dex `.mpe`, embarqués dans le `.mpp`). Hébergé sur GitHub Packages, donc il faut un jeton `read:packages` (dans Actions, `GITHUB_TOKEN` suffit) |
+| [morphe-patches-template](https://github.com/MorpheApp/morphe-patches-template) | Point de départ d'un dépôt de patches tiers, dont ce dépôt reprend la structure |
+| `release.yml` + `.releaserc` (semantic-release) | À chaque push sur `main` (stable) ou `dev` (pré-version), avec des commits `feat:` / `fix:` : construit `patches-<v>.mpp`, crée la Release GitHub, met à jour `patches-bundle.json`, `patches-list.json`, `CHANGELOG.md` et la liste du README |
+| [Morphe Manager](https://github.com/MorpheApp/morphe-manager) | Pour une source `owner/repo`, lit `https://raw.githubusercontent.com/owner/repo/main/patches-bundle.json` (ou `/dev/` si les pré-versions sont activées). Ce fichier contient `version`, `download_url` (le `.mpp` de la Release), `created_at`, `description` et en option `public_key`. Lien d'ajout : `https://morphe.software/add-source?github=owner/repo` |
+| Signature (optionnelle) | `./gradlew generateSigningKey`, puis le secret `MORPHE_SIGNING_KEY` dans les Actions. Le Manager mémorise la clé et refuse ensuite une Release modifiée |
 
-Il faut conserver la mention de copyright de Kyant et un fichier `NOTICE` (Apache-2.0).
+Notions clés du patcher :
+
+- **Patch** : `bytecodePatch(name, description, default) { compatibleWith(...); extendWith("x.mpe"); execute { ... } }`.
+- **Options** : `intOption`, `booleanOption`… réglables dans le Manager.
+- **`Compatibility`** : paquet, nom, type de fichier attendu (`APKM`…), couleur d'icône, versions cibles (`AppTarget`, dont `version = null` = « expérimental, toutes versions »).
+- **`Fingerprint`** : description partielle d'une méthode (classe, nom, types, filtres d'instructions) pour la retrouver malgré l'obfuscation.
+- **Extension** : dex précompilé fusionné dans l'app, appelé depuis le smali injecté (`addInstructions`, `addInstructionsWithLabels`, `returnEarly`…).
+- **Licence** : GPLv3, avec interdiction d'utiliser le nom « Morphe » pour un dérivé. Ce dépôt s'appelle donc **LiquidMusic Patches**, « compatible avec Morphe ».
 
 ---
 
-## 3. Architecture
+## 3. Ce qui est implémenté
 
 ```
-LiquidMusic/
-├── glass/            # Bibliothèque Android (Views, sans Compose) : moteur Liquid Glass
-│   ├── GlassShaders.kt          # AGSL portés de Backdrop (réfraction, dispersion, highlight)
-│   ├── GlassEffect.kt           # construit la chaîne RenderEffect (API 31 / 33)
-│   └── LiquidGlassRenderer.kt   # dessine une pilule de verre à partir d'un RenderNode source
-├── sample/           # App de démo : RecyclerView de pochettes + BlurTarget/pilules (phase 1)
-├── xposed/           # Module LSPosed, scope com.apple.android.music
-│   ├── Entry.kt                 # IXposedHookLoadPackage
-│   ├── BlurViewHook.kt          # hook BlurView.draw + proxy du contrôleur
-│   ├── TintHook.kt              # éclaircit bg_apple_material
-│   └── settings/                # réglages (intensité, flou, teinte, pilules concernées)
-├── tools/            # Analyse d'APK sans dépendance (Python stdlib)
-│   ├── apk_triage.py            # vue d'ensemble : SDK, Compose, widgets, sécurité, natif
-│   ├── apk_res.py               # resources.arsc + layouts compilés en clair
-│   └── dex_inspect.py           # classes / champs / méthodes / appels dans les DEX
-└── docs/apple-music-<version>.md   # rapport d'analyse par version
+patches/src/main/kotlin/app/liquidmusic/patches/applemusic/
+├── shared/Constants.kt                 # Compatibility Apple Music (APKM, 7.0.0-beta + expérimental)
+└── layout/liquidglass/
+    ├── Fingerprints.kt                 # BlurViewDrawFingerprint : BlurView.draw(Canvas) + appel super.draw
+    └── LiquidGlassPatch.kt             # patch "Liquid Glass" + 8 options
+extensions/liquidglass/src/main/java/app/liquidmusic/extension/
+├── LiquidGlassPatch.java               # point d'entrée drawBlurView(View, Canvas) + getters d'options
+├── GlassRenderer.java                  # rendu du verre (RenderNode, RenderEffect, AGSL), teinte, suivi de position
+├── BlurViewAccess.java                 # accès par type aux champs obfusqués de BlurView v3
+└── GlassShaders.java                   # shaders AGSL portés de Backdrop (réfraction, dispersion, reflet)
 ```
 
-### Fonctionnement du hook (détails et noms dans `docs/`)
+### Le patch (bytecode)
 
-```kotlin
-// Dans le process com.apple.android.music (LSPosed, API Xposed 82)
-val blurView = XposedHelpers.findClass("eightbitlab.com.blurview.BlurView", cl)
-val blurTarget = XposedHelpers.findClass("eightbitlab.com.blurview.BlurTarget", cl)
-val controllerField = blurView.declaredFields.single { it.type.isInterface }.apply { isAccessible = true }
-val targetNodeField = blurTarget.declaredFields.single { it.type == RenderNode::class.java }.apply { isAccessible = true }
-val drawMethod = controllerField.type.methods.single {
-    it.returnType == Boolean::class.javaPrimitiveType && it.parameterTypes.contentEquals(arrayOf(Canvas::class.java))
+`BlurView.draw(Canvas)` garde son nom : la classe est référencée par les layouts et la méthode surcharge `View.draw`. Elle devient :
+
+```java
+public final void draw(Canvas canvas) {
+    if (LiquidGlassPatch.drawBlurView(this, canvas)) {   // injecté
+        super.draw(canvas);                              // fond + enfants
+        return;
+    }
+    ...code d'origine (flou Apple)
 }
-
-XposedHelpers.findAndHookMethod(blurView, "draw", Canvas::class.java, object : XC_MethodHook() {
-    override fun beforeHookedMethod(p: MethodHookParam) {
-        val view = p.thisObject as View
-        if (view.id !in targetIds || Build.VERSION.SDK_INT < 31) return
-        val current = controllerField.get(view)
-        if (!Proxy.isProxyClass(current.javaClass)) {
-            controllerField.set(view, glassProxy(view, delegate = current))   // ré-enveloppe après chaque setupWith
-        }
-    }
-})
-
-fun glassProxy(view: View, delegate: Any): Any =
-    Proxy.newProxyInstance(cl, arrayOf(controllerField.type)) { proxy, m, args ->
-        if (m == drawMethod) {
-            val canvas = args[0] as Canvas
-            if (canvas.isHardwareAccelerated) renderers.getOrPut(view) { LiquidGlassRenderer(view) }
-                .draw(canvas, source = findBlurTarget(view), sourceNode = targetNodeField.get(target) as RenderNode)
-            true                                             // BlurView dessine ensuite son fond et ses enfants
-        } else {
-            val r = m.invoke(delegate, *(args ?: emptyArray()))
-            if (r === delegate) proxy else r                 // API fluide de BlurView
-        }
-    }
 ```
 
-Côté rendu, `LiquidGlassRenderer.draw` :
+Les options du Manager sont injectées dans l'extension en remplaçant le corps de ses getters par `returnEarly(valeur)`.
 
-1. **Nœud de capture** : un `RenderNode` de la taille de la pilule + marge (rayon de flou). Il enregistre `translate(-(pos pilule − pos cible) + marge)` puis `drawRenderNode(sourceNode)`. C'est un seul appel : le contenu de la cible est déjà enregistré par Apple à chaque frame.
-2. **Chaîne d'effets** : `createChainEffect(lens, createChainEffect(blur, saturation))`, comme dans Backdrop. Le shader AGSL reçoit `size` = taille de la pilule, `offset` = −marge et `cornerRadii` = min(h/2, 80dp).
-3. **Dessin** : on dessine le nœud découpé au `Path` capsule, puis le reflet (highlight AGSL) et la teinte réglable.
-4. **Mise à jour** : un `OnPreDrawListener` invalide la BlurView si sa position change (animation du mini-player, clavier, rotation).
+### Options
 
-**Teinte** : `bottom_nav_view.background` et `mini_player_content.background` sont des `LayerDrawable`. On récupère `material_layer` et `artwork_color_scheme_layer` (ids via `getIdentifier`) et on baisse leur alpha, par exemple à 40 %, ou on les remplace par la teinte Backdrop. On le vérifie à chaque attachement, car Apple peut reconstruire le fond quand la pochette change.
+| Option | Défaut | Rôle |
+|---|---|---|
+| Blur radius | 8 dp | Flou du contenu derrière le verre |
+| Refraction width | 24 dp | Largeur de la bande courbée sur les bords (0 = pas de réfraction) |
+| Refraction strength | 24 dp | Déplacement du contenu au bord |
+| Vibrancy | 150 % | Saturation du contenu |
+| Tint opacity | 40 % | Part conservée de la teinte `bg_apple_material` d'Apple |
+| Edge highlight | 100 % | Intensité du liseré lumineux |
+| Chromatic aberration | non | Dispersion prismatique des bords (Android 13+) |
+| Search bar | oui | Applique aussi le verre à `floating_search_bar_blur` et `top_nav_blur` (tablette) |
 
----
+### L'extension (exécutée dans Apple Music)
 
-## 4. Plan de travail
-
-### ✅ Phase 0 : analyse (faite)
-
-- [x] Triage de l'APKM 7.0.0-beta (`tools/apk_triage.py`).
-- [x] Hiérarchie de `fragment_music_content.xml` et `mini_player.xml` (`tools/apk_res.py`).
-- [x] Identification de BlurView v3 et de ses noms obfusqués (`tools/dex_inspect.py`).
-- [x] Repérage de Play Integrity et des bibliothèques natives (DRM).
-- [ ] Sur un appareil : confirmer avec `adb shell dumpsys activity top` (ou Developer Assistant) que les ids `bottom_nav_blur` / `mini_player_blur` / `mini_player_content` sont bien affichés à l'écran d'accueil.
-
-### Phase 1 : moteur de verre + démo (2 à 3 jours)
-
-1. `glass/` : porter les shaders (`Shaders.kt` de Backdrop), la chaîne d'effets et le reflet.
-2. `sample/` : reproduire la structure d'Apple, avec un `BlurTarget`-like (FrameLayout qui enregistre ses enfants dans un `RenderNode`), un `RecyclerView` de pochettes colorées, une pilule « barre » de 62dp et une pilule « mini-player » de 48dp.
-3. Valider :
-   - même rendu que l'APK catalogue de Backdrop ;
-   - thème clair et sombre ;
-   - fluidité au défilement (`dumpsys gfxinfo … framestats`) ;
-   - replis API 31-32 et 30.
-
-### Phase 2 : module LSPosed (2 à 3 jours)
-
-1. Squelette du module : `compileOnly("de.robv.android.xposed:api:82")`, `assets/xposed_init`, scope `com.apple.android.music`. Il embarque `glass/` (pas de Compose, module léger).
-2. `BlurViewHook` : proxy du contrôleur sur `bottom_nav_blur` et `mini_player_blur` (voir §3).
-3. `TintHook` : éclaircit `bg_apple_material` sur `bottom_nav_view` et `mini_player_content`.
-4. Tests :
-   - défilement de chaque onglet ;
-   - ouverture et fermeture du lecteur plein écran (bottom sheet) ;
-   - mini-player caché quand rien ne joue ;
-   - changement de pochette (couche `artwork_color_scheme`) ;
-   - mode sombre ou clair, rotation, tablette (`layout-w600dp`) ;
-   - stabilité sur longue durée (fuites de `RenderNode`).
-5. Sécurité : si un id ou un champ est introuvable, on n'installe rien et on écrit un log. Le pire cas est le rendu Apple d'origine, jamais un crash.
-
-### Phase 3 : finitions « comme iOS » (optionnel, 3 à 5 jours)
-
-- Étendre le verre à `floating_search_bar_blur` (barre de recherche) et `top_nav_blur`.
-- **Goutte de sélection** liquide sous l'onglet actif : port de `LiquidBottomTabs`, `DampedDragAnimation` et `InteractiveHighlight`. On suit l'onglet sélectionné via `View.isSelected()` des items de `bottom_nav_view` (API du framework, donc pas de nom obfusqué).
-- Reflet qui suit le doigt, léger grossissement à l'appui.
-- Écran de réglages : intensité de la réfraction, rayon de flou, opacité de la teinte, aberration chromatique, pilules concernées.
-
-### Phase 4 : distribution et maintenance
-
-- GitHub Actions : compiler l'APK du module et le publier en Release.
-- `README` : installation via LSPosed et tableau de compatibilité par version d'Apple Music.
-- À chaque version d'Apple Music, relancer les trois scripts de `tools/`. Les points d'accroche sont choisis pour survivre à l'obfuscation (`BlurView.draw`, ids de ressources, champs trouvés par type), donc en général rien à changer.
-- **Ne jamais publier d'APK Apple Music**, modifié ou non : uniquement le module.
+1. **Cible** : nom de ressource de la BlurView. Toujours `bottom_nav_blur` et `mini_player_blur` ; en option `floating_search_bar_blur` et `top_nav_blur`. Les autres BlurView, comme `drawer_blur`, gardent le flou d'Apple.
+2. **Source** : le `BlurTarget` configuré par Apple. On le lit dans le contrôleur de la BlurView, retrouvé comme seul champ de type interface, puis à défaut en cherchant un `BlurTarget` voisin. Ensuite on prend son champ `RenderNode`, trouvé par type.
+3. **Rendu** :
+   - un `RenderNode` de la taille de la pilule + un rayon de flou, qui référence le nœud du BlurTarget au bon décalage ;
+   - la chaîne `saturation → createBlurEffect → createRuntimeShaderEffect(réfraction)` ;
+   - un découpage à la forme (rayon lu sur le fond `GradientDrawable`, sinon capsule) ;
+   - le reflet de Backdrop : contour de 0,5 dp, shader AGSL, `BlendMode.PLUS`.
+4. **Teinte** : les couches `material_layer` et `artwork_color_scheme_layer` du fond de `bottom_nav_view` / `mini_player_content` passent à l'opacité choisie.
+5. **Mouvements** : un `OnPreDrawListener` redessine la pilule quand sa position change (animation du mini-player). Le défilement du contenu, lui, se propage tout seul par le `RenderNode`.
+6. **Sécurité** : Android < 12, canvas logiciel, vue inconnue ou exception → `false`, et BlurView dessine son flou d'origine. Aucun crash possible du fait du patch.
 
 ---
 
-## 5. Risques
+## 4. Reste à faire
+
+1. **Compiler** : la CI (`release.yml`, étape « Verify project compiles ») tourne à chaque push. On ne peut pas compiler dans l'environnement de développement actuel, faute de SDK Android et de jeton GitHub Packages.
+2. **Première Release** : fusionner cette branche dans `dev` (pré-version `1.0.0-dev.1`) ou `main` (`1.0.0`). Le workflow publie le `.mpp` et remplit `patches-bundle.json`. Réglages GitHub nécessaires :
+   - Settings › Actions › General › Workflow permissions : « Read and write » ;
+   - cocher « Allow GitHub Actions to create and approve pull requests » (pour `open_pull_request.yml`).
+3. **Test sur appareil** (Android 13+), dans cet ordre :
+   - connexion Apple ID et lecture sur l'APK patché (Play Integrity) ;
+   - rendu de la barre et du mini-player (défilement, ouverture et fermeture du lecteur, changement de pochette, clair et sombre) ;
+   - performances (`adb shell dumpsys gfxinfo com.apple.android.music framestats`) ;
+   - Android 12 (sans réfraction).
+4. **Réglages fins** des valeurs par défaut après comparaison avec iOS 26.
+5. **Optionnel** :
+   - signer les Releases (`generateSigningKey`) ;
+   - ajouter une icône `patches-bundle.png` ;
+   - ajouter la goutte de sélection liquide sous l'onglet actif (port de `LiquidBottomTabs`).
+
+---
+
+## 5. Plan B si Play Integrity bloque : module LSPosed (root)
+
+Sans re-signature, Apple Music garde sa signature d'origine et passe Play Integrity (si l'appareil le passe). Il suffit de :
+
+- hooker `eightbitlab.com.blurview.BlurView.draw(Canvas)` avec Xposed ;
+- appeler le même `LiquidGlassPatch.drawBlurView(view, canvas)` ;
+- si le résultat est `true`, appeler `View.draw` d'origine et sauter le code d'origine.
+
+`extensions/liquidglass` est réutilisable tel quel. Les options passeraient par des préférences du module au lieu de `returnEarly`.
+
+---
+
+## 6. Risques
 
 | Risque | Impact | Parade |
 |---|---|---|
-| Play Integrity sur APK re-signé | Pas de version sans root fiable | Support officiel : LSPosed (root) uniquement ; LSPatch « non supporté » |
-| Détection de root (`/system/xbin/su`) ou d'intégrité de l'appareil | L'app peut limiter des fonctions | Masquage côté LSPosed (Shamiko / HMA), à tester |
-| Apple change de bibliothèque de flou ou de layout (la 7.0 est en bêta) | Le mod ne s'applique plus, sans crash | Repli silencieux ; réanalyse avec `tools/` ; garder un plan B qui pose notre propre vue de verre au même endroit |
-| Coût GPU (saturation + flou + AGSL à chaque frame) | Saccades sur petits appareils | Nœud limité à la pilule + marge, réglages, désactivation par pilule |
-| Android 11-12 | Pas de réfraction | Rendu Apple (11) ou flou seul (12) |
-| Juridique (CGU Apple, droit d'auteur) | Retrait du projet | Usage personnel, module uniquement, aucun binaire Apple redistribué |
-
----
-
-## 6. Prochaine étape
-
-Phase 1 : écrire `glass/` et l'app `sample/`. Pour ça, il faut un projet Gradle Android dans ce repo (AGP, Kotlin, minSdk 30, compileSdk 36).
+| Play Integrity sur APK re-signé | Connexion ou abonnement refusés | Tester en premier ; sinon plan B LSPosed |
+| Achats Google Play sur APK re-signé | Paiement in-app indisponible | S'abonner avant, ou depuis un autre appareil |
+| Apple change de bibliothèque de flou ou de layout (la 7.0 est en bêta) | Le patch échoue (empreinte) ou ne fait rien | Réanalyse avec `tools/` ; empreinte sur des noms stables |
+| Coût GPU | Saccades sur petits appareils | Nœud limité à la pilule + marge ; options pour réduire flou ou réfraction |
+| Juridique | Retrait | Ni APK ni code Apple dans le dépôt ; l'utilisateur patche sa propre copie |
