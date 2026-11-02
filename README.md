@@ -122,9 +122,9 @@ These are the starting values: all of them can also be changed later in the app,
 ## Patches
 
 <!-- PATCHES_START EXPANDED -->
-> **[v1.1.0](https://github.com/myvoow/LiquidMusic/releases/tag/v1.1.0)**&nbsp;&nbsp;•&nbsp;&nbsp;`main`&nbsp;&nbsp;•&nbsp;&nbsp;1 patches total
+> **[v1.2.0](https://github.com/myvoow/LiquidMusic/releases/tag/v1.2.0)**&nbsp;&nbsp;•&nbsp;&nbsp;`main`&nbsp;&nbsp;•&nbsp;&nbsp;3 patches total
 <details open>
-<summary>📦 Apple Music&nbsp;&nbsp;•&nbsp;&nbsp;1 patch</summary>
+<summary>📦 Apple Music&nbsp;&nbsp;•&nbsp;&nbsp;3 patches</summary>
 <br>
 
 **Package name:** `com.apple.android.music`
@@ -137,7 +137,9 @@ These are the starting values: all of them can also be changed later in the app,
 
 | 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |
 |----------|----------------|-----------|
-| [Liquid Glass](#liquid-glass) | Replaces the blur behind the floating tab bar and the mini player with clear Liquid Glass: refracted edges, vibrancy and a specular rim, without blur. Refraction requires Android 13, vibrancy Android 12. | • Blur radius<br>• Refraction width<br>• Refraction strength<br>• Vibrancy<br>• Tint opacity<br>• Edge highlight<br>• Chromatic aberration<br>• Search bar |
+| [Accent color](#accent-color) | Replaces the red of Apple Music (buttons, links, the selected tab, progress) with another color. Blue matches the liquid tab bar. | • Color in the dark theme<br>• Color in the light theme |
+| [Liquid Glass](#liquid-glass) | Liquid Glass on the floating tab bar and the mini player: clear glass with refracted edges, vibrancy and a specular rim, and the liquid tab bar of Backdrop by Kyant, with a drop of glass on the active tab. Refraction requires Android 13, the rest Android 12. | • Blur radius<br>• Refraction width<br>• Refraction strength<br>• Vibrancy<br>• Tint opacity<br>• Edge highlight<br>• Chromatic aberration<br>• Search bar<br>• Tablet sidebar<br>• Liquid tab bar<br>• Tab labels<br>• Hide the New tab<br>• Hide the Radio tab<br>• Start tab<br>• Haptic feedback |
+| [Liquid Glass icon](#liquid-glass-icon) | Replaces the app icon with the LiquidMusic icon: a drop of glass over the colors. It also has a themed icon for Android 13+. |  |
 
 </details>
 

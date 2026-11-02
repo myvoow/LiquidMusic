@@ -1,3 +1,9 @@
+## [1.2.0](https://github.com/myvoow/LiquidMusic/compare/v1.1.0...v1.2.0) (2026-11-02)
+
+### ✨ New Features
+
+* liquid tab bar, live settings, sidebar glass, accent color and icon ([4dad260](https://github.com/myvoow/LiquidMusic/commit/4dad2606cba1ae58e7fa5cd21f6f3b0a274af486))
+
 ## [1.1.0](https://github.com/myvoow/LiquidMusic/compare/v1.0.2...v1.1.0) (2026-11-02)
 
 ### ✨ New Features
