@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-LiquidMusic — lecture des ressources d'un APK / APKM (stdlib uniquement).
+LiquidMusic - reads the resources of an APK / APKM (standard library only).
 
-  * décode resources.arsc (noms + valeurs simples, toutes configurations) ;
-  * affiche un layout compilé sous forme d'arbre, références résolues ;
-  * recherche des ressources par nom.
+  * decodes resources.arsc (names and simple values, all configurations);
+  * prints a compiled layout as a tree, with references resolved;
+  * searches resources by name.
 
-Exemples :
+Examples:
     python3 -I tools/apk_res.py app.apkm layout res/layout/fragment_music_content.xml
     python3 -I tools/apk_res.py app.apkm find 'bottom_nav|mini_?player'
     python3 -I tools/apk_res.py app.apkm value color/bottom_nav_background
@@ -68,7 +68,7 @@ def format_value(vtype: int, data: int, strings: list[str], table: "ResTable | N
 
 
 def describe_config(cfg: bytes) -> str:
-    """Qualificatifs lisibles pour les champs les plus utiles de ResTable_config."""
+    """Readable qualifiers for the most useful fields of ResTable_config."""
     if len(cfg) < 8:
         return "default"
     parts = []
@@ -115,7 +115,7 @@ class ResTable:
         self.global_strings: list[str] = []
         self._raw_values: list[tuple[int, str, int, int, list[tuple[int, int, int]] | None]] = []
         self._parse(data)
-        # formatage différé : les références nécessitent la table de noms complète
+        # formatted afterwards: references need the complete name table
         for resid, cfg, vtype, vdata, bag in self._raw_values:
             if bag is None:
                 text = format_value(vtype, vdata, self.global_strings, self)
@@ -261,12 +261,12 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("package")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("layout", help="affiche un layout compilé (chemin res/... ou nom layout/xxx)")
+    p = sub.add_parser("layout", help="prints a compiled layout (res/... path or layout/xxx name)")
     p.add_argument("paths", nargs="+")
-    p = sub.add_parser("find", help="cherche des ressources par regex sur 'type/nom'")
+    p = sub.add_parser("find", help="searches resources with a regex on 'type/name'")
     p.add_argument("regex")
-    p.add_argument("--values", action="store_true", help="affiche aussi les valeurs")
-    p = sub.add_parser("value", help="affiche toutes les valeurs d'une ressource 'type/nom'")
+    p.add_argument("--values", action="store_true", help="also prints the values")
+    p = sub.add_parser("value", help="prints every value of a 'type/name' resource")
     p.add_argument("names", nargs="+")
     args = ap.parse_args()
 
@@ -292,7 +292,7 @@ def main() -> None:
     elif args.cmd == "value":
         for n in args.names:
             rid = table.by_name.get(n)
-            print(f"{n} = 0x{rid:08x}" if rid else f"{n} : introuvable")
+            print(f"{n} = 0x{rid:08x}" if rid else f"{n}: not found")
             for cfg, v in table.values.get(rid, []) if rid else []:
                 print(f"    [{cfg}] {v}")
 

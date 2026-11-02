@@ -1,11 +1,11 @@
-# Analyse : Apple Music 7.0.0-beta (Android)
+# Analysis: Apple Music 7.0.0-beta (Android)
 
-- Fichier : `Apple Music 7.0.0-beta (120-640dpi) (Android 11+)`, bundle `.apkm` APKMirror (base + 11 splits)
-- Paquet : `com.apple.android.music`, versionCode **1606**, minSdk **30**, targetSdk **36**
-- Activité de lancement : `com.apple.android.music.common.MainActivity`
-- 4 DEX, code obfusqué par R8 (sauf classes référencées dans les layouts et une partie des classes `com.apple.*`)
+- File: `Apple Music 7.0.0-beta (120-640dpi) (Android 11+)`, APKMirror `.apkm` bundle (base + 11 splits)
+- Package: `com.apple.android.music`, versionCode 1606, minSdk 30, targetSdk 36
+- Launcher activity: `com.apple.android.music.common.MainActivity`
+- 4 DEX files, code obfuscated by R8 (except the classes referenced by layouts and part of the `com.apple.*` classes)
 
-Reproduire :
+To reproduce:
 
 ```bash
 python3 -I tools/apk_triage.py "Apple Music.apkm" --json triage.json
@@ -15,106 +15,103 @@ python3 -I tools/dex_inspect.py "Apple Music.apkm" class 'Leightbitlab/com/blurv
 
 ---
 
-## 1. Verdict : vues classiques, avec du flou déjà en place
+## 1. Verdict: classic Views, with a blur already in place
 
-L'app est hybride (des `ComposeView` existent pour des dialogues et dégradés), mais **la barre d'onglets et le mini-player sont des `View` classiques**. Apple utilise même déjà la bibliothèque **BlurView v3** (Dimezis, paquet `eightbitlab.com.blurview`) pour flouter le contenu sous les deux pilules. Toute la plomberie de capture du fond existe donc déjà. Le mod n'a qu'à **remplacer l'effet appliqué** (flou simple → flou + réfraction + saturation + reflet) et **éclaircir la teinte** posée par-dessus.
+The app is hybrid (there are `ComposeView`s for dialogs and gradients), but the tab bar and the mini player are classic `View`s. Apple even uses the BlurView v3 library (Dimezis, package `eightbitlab.com.blurview`) to blur the content under both pills. All the plumbing that captures the background is therefore already there. The mod only has to replace the effect that is applied (plain blur → blur + refraction + saturation + highlight) and lighten the tint drawn on top.
 
 ---
 
-## 2. Hiérarchie de l'écran principal (téléphone)
+## 2. View hierarchy of the main screen (phone)
 
-`res/layout/fragment_music_content.xml` (data binding `q8/R4` dans cette version) :
+`res/layout/fragment_music_content.xml` (data binding `q8/R4` in this version):
 
 ```
 ConstraintLayout                     @id/content_container
-├── BlurTarget                       @id/blur_target          ← source du flou (tout le contenu)
-│   └── FrameLayout                  @id/tab_navigation_host  ← fragments des onglets
+├── BlurTarget                       @id/blur_target          ← blur source (all the content)
+│   └── FrameLayout                  @id/tab_navigation_host  ← fragments of the tabs
 ├── ComposeView                      @id/top_and_bottom_gradients
-├── BlurView                         @id/mini_player_blur     ← pilule du mini-player (GONE au départ)
+├── BlurView                         @id/mini_player_blur     ← pill of the mini player (GONE at first)
 │     background=@drawable/bg_corner_radius_pill, height=@dimen/miniplayer_height (48dp)
 ├── CoordinatorLayout                @id/player_coordinator
 │   └── FragmentContainerView        @id/player_sheet_container
 │         PlayerMainFragment (BottomSheetBehavior, peekHeight=@dimen/player_peek_height)
-│         └── layout/mini_player.xml : contenu du mini-player (titre, artiste, ▶, ⏭, …)
+│         └── layout/mini_player.xml: content of the mini player (title, artist, ▶, ⏭, …)
 │               ConstraintLayout     @id/mini_player_content  background=@drawable/bg_apple_material
-├── BlurView                         @id/bottom_nav_blur      ← calée sur bottom_nav_view
+├── BlurView                         @id/bottom_nav_blur      ← aligned with bottom_nav_view
 │     background=@drawable/bg_corner_radius_pill
-└── BottomNavigationView             @id/bottom_nav_view      ← la barre d'onglets
+└── BottomNavigationView             @id/bottom_nav_view      ← the tab bar
       background=@drawable/bg_apple_material, height=@dimen/navigation_tabs_height (62dp)
       marginStart/End=@dimen/endMargin (16/20/34dp), itemActiveIndicatorStyle=@null
 ```
 
-Variantes tablette (`layout-w600dp`, `layout-w675dp`, `layout-w735dp`) : même principe. D'autres `BlurView` existent : `top_nav_blur`, `floating_search_bar_blur` (barre de recherche flottante), `drawer_blur` (activité principale). Elles sont candidates au même traitement.
+The tablet variants (`layout-w600dp`, `layout-w675dp`, `layout-w735dp`) follow the same principle. Other `BlurView`s exist: `top_nav_blur`, `floating_search_bar_blur` (floating search bar) and `drawer_blur` (main activity). They can get the same treatment.
 
-### Ce qui donne l'aspect « presque opaque » actuel
+### Where the near-opaque look comes from
 
-Ordre de dessin d'une pilule :
+Drawing order of a pill:
 
-1. `BlurView` : flou du `BlurTarget`, **rayon 16 px** (constante passée à `setBlurRadius`, inlinée dans `oh.f.d()`). Pas de couleur de recouvrement dans le layout.
-2. Par-dessus, la vue de contenu (`bottom_nav_view` / `mini_player_content`) a pour fond `bg_apple_material`, un `layer-list` :
-   - `@id/artwork_color_scheme_layer` → `layer_artwork_color_scheme` (forme pilule, `apple_material_background`) ;
-   - `@id/material_layer` → `layer_apple_material` (forme pilule, `apple_material_background`, contour `apple_material_stroke` de `apple_material_bg_stroke`).
+1. `BlurView`: blur of the `BlurTarget`, radius 16 px (a constant passed to `setBlurRadius`, inlined in `oh.f.d()`). The layout sets no overlay color.
+2. On top, the content view (`bottom_nav_view` / `mini_player_content`) has `bg_apple_material` as its background, a `layer-list`:
+   - `@id/artwork_color_scheme_layer` → `layer_artwork_color_scheme` (pill shape, `apple_material_background`);
+   - `@id/material_layer` → `layer_apple_material` (pill shape, `apple_material_background`, stroke `apple_material_stroke` of width `apple_material_bg_stroke`).
 
-| Couleur | Clair | Sombre |
+| Color | Light | Dark |
 |---|---|---|
-| `apple_material_background` | `#8cf5f5f7` (55 %) | `#99262628` (60 %) |
-| `apple_material_background_thick` | `#bff5f5f7` (75 %) | `#bf262628` (75 %) |
+| `apple_material_background` | `#8cf5f5f7` (55%) | `#99262628` (60%) |
+| `apple_material_background_thick` | `#bff5f5f7` (75%) | `#bf262628` (75%) |
 | `apple_material_stroke` | `#1a000000` | `#33ffffff` |
 
-Avec deux couches à 60 % sur un flou faible, il ne reste que ~16 % de fond visible : d'où « un peu de translucidité ». `corner_radius_pill` = 80dp, donc forme capsule.
+With two layers at 60% over a weak blur, only ~16% of the background stays visible, hence "a little translucency". `corner_radius_pill` = 80dp, so the shape is a capsule.
 
 ---
 
-## 3. BlurView v3 dans cet APK (noms obfusqués de la 7.0.0-beta)
+## 3. BlurView v3 in this APK (obfuscated names in 7.0.0-beta)
 
-| Rôle (source BlurView v3) | Nom ici | Stable ? |
+| Role (BlurView v3 source) | Name here | Stable? |
 |---|---|---|
-| `BlurView` | `eightbitlab.com.blurview.BlurView` | **Oui** (référencée par les layouts) |
-| `BlurTarget` | `eightbitlab.com.blurview.BlurTarget` | **Oui** |
-| `BlurTarget.renderNode` (`"BlurViewHost node"`) | champ `a : RenderNode` | Retrouvable **par type** |
-| `BlurView.blurController` | champ `a : oh.a` (seul champ de type interface) | Retrouvable **par type** |
-| `BlurView.overlayColor` | champ `b : int` | — |
-| `BlurView.setupWith(BlurTarget)` | `b(BlurTarget) : oh.a` | Signature unique |
-| `BlurView.draw(Canvas)` | `draw(Canvas)` | **Oui** (méthode du framework) |
-| interface `BlurController` | `oh.a` : `g(Canvas)Z` (= draw), `f()V`, `destroy()`, `b(Z)`, `d()`, `e(Drawable)` | `draw` = seule méthode `(Canvas)boolean` |
-| `RenderNodeBlurController` | `oh.f` (champ `e : RenderNode` `"BlurView node"`, `k : float` rayon, `j : int` overlay) | Par interface + champ `RenderNode` |
+| `BlurView` | `eightbitlab.com.blurview.BlurView` | Yes (referenced by layouts) |
+| `BlurTarget` | `eightbitlab.com.blurview.BlurTarget` | Yes |
+| `BlurTarget.renderNode` (`"BlurViewHost node"`) | field `a : RenderNode` | Found by type |
+| `BlurView.blurController` | field `a : oh.a` (the only field with an interface type) | Found by type |
+| `BlurView.overlayColor` | field `b : int` | — |
+| `BlurView.setupWith(BlurTarget)` | `b(BlurTarget) : oh.a` | Unique signature |
+| `BlurView.draw(Canvas)` | `draw(Canvas)` | Yes (overrides a framework method) |
+| interface `BlurController` | `oh.a`: `g(Canvas)Z` (= draw), `f()V`, `destroy()`, `b(Z)`, `d()`, `e(Drawable)` | `draw` = the only `(Canvas)boolean` method |
+| `RenderNodeBlurController` | `oh.f` (field `e : RenderNode` `"BlurView node"`, `k : float` radius, `j : int` overlay) | Through the interface + `RenderNode` field |
 | `PreDrawBlurController` (API < 31) | `oh.d` + `oh.g` (RenderScript) | — |
 
-Fonctionnement (`oh.f.g(Canvas)`, API 31+ et canvas matériel) :
+How `oh.f.g(Canvas)` works (API 31+ with a hardware canvas):
 
-1. le nœud `"BlurView node"` prend la taille du `BlurTarget`, translaté de −(position de la BlurView dans la cible) ;
-2. il enregistre `frameClearDrawable` puis `drawRenderNode(BlurTarget.renderNode)` ;
-3. il applique `RenderEffect.createBlurEffect(k, k, CLAMP)` ;
-4. il dessine ce nœud, découpé au rectangle de la BlurView, puis le bruit (`oh.c`) et `drawColor(overlay)`.
+1. the `"BlurView node"` takes the size of the `BlurTarget`, translated by −(position of the BlurView inside the target);
+2. it records `frameClearDrawable`, then `drawRenderNode(BlurTarget.renderNode)`;
+3. it applies `RenderEffect.createBlurEffect(k, k, CLAMP)`;
+4. it draws this node clipped to the rectangle of the BlurView, then the noise (`oh.c`) and `drawColor(overlay)`.
 
-`BlurTarget.dispatchDraw` réenregistre son contenu dans son `RenderNode` à chaque frame. Le défilement se propage donc tout seul, sans invalider la BlurView.
+`BlurTarget.dispatchDraw` records its content into its `RenderNode` again on every frame. Scrolling therefore propagates on its own, without invalidating the BlurView.
 
-Appels côté Apple :
+Calls on Apple's side:
 
-- `MainActivity.onCreate` : `binding.b0 (BlurView).setupWith(binding.Z (BlurTarget)).setBlurRadius(16).setFrameClearDrawable(decorView.background)` pour la `drawer_blur` ;
-- lambda `Vb.x` (fragment de contenu) : même chaîne pour `bottom_nav_blur` / `mini_player_blur` avec `q8/R4.Z` (`blur_target`) ;
-- `SearchLandingFragment.onViewCreated` : idem pour `floating_search_bar_blur`.
+- `MainActivity.onCreate`: `binding.b0 (BlurView).setupWith(binding.Z (BlurTarget)).setBlurRadius(16).setFrameClearDrawable(decorView.background)` for `drawer_blur`;
+- lambda `Vb.x` (content fragment): the same chain for `bottom_nav_blur` / `mini_player_blur` with `q8/R4.Z` (`blur_target`);
+- `SearchLandingFragment.onViewCreated`: the same for `floating_search_bar_blur`.
 
 ---
 
-## 4. Sécurité et voie sans root
+## 4. Security and the non-root path
 
-| Élément | Constat | Conséquence |
+| Item | Finding | Consequence |
 |---|---|---|
-| Play Integrity | `com.apple.android.music.utils.AppIntegrityManager`, `prepareIntegrityToken`, jeton `appIntegrityToken` envoyé dans `WebViewModel.initiateRequest` (flux commerce / compte) et `externalAppIntegrity` dans la config « bag » du store | Un APK **re-signé** (LSPatch, patch statique) sera vu comme « app non reconnue » par Play Integrity : connexion ou abonnement probablement refusés. La voie **LSPosed (root, sans re-signature)** évite le problème |
-| Signatures | `AMSStableIdentifier.verifyPackageSignature` (vérifie d'*autres* paquets Apple), `ke.k.c(PackageInfo)` (bibliothèque Google) | Pas de vérification de sa propre signature repérée côté Java |
-| Root | chaîne `/system/xbin/su` présente (classes4) | Détection basique possible : à tester avec LSPosed + masquage si besoin |
-| Natif | `libCoreFP.so`, `libCoreADI.so`, `libCoreLSKD.so`, `libFPDIFor3P.so` (FairPlay / ADI), `libmediaplatform.so`, `libAMSKit.so`… | DRM natif : le mod ne touche **rien** côté natif ni lecture |
+| Play Integrity | `com.apple.android.music.utils.AppIntegrityManager`, `prepareIntegrityToken`, an `appIntegrityToken` sent in `WebViewModel.initiateRequest` (commerce / account flows) and `externalAppIntegrity` in the store "bag" config | Play Integrity will see a re-signed APK (Morphe, LSPatch, static patch) as an "unrecognized app": sign-in or subscription will probably be refused. The LSPosed route (root, no re-signing) avoids the problem |
+| Signatures | `AMSStableIdentifier.verifyPackageSignature` (checks *other* Apple packages), `ke.k.c(PackageInfo)` (Google library) | No check of its own signature found on the Java side |
+| Root | the string `/system/xbin/su` is present (classes4) | Basic detection is possible: test with LSPosed, and hide root if needed |
+| Native | `libCoreFP.so`, `libCoreADI.so`, `libCoreLSKD.so`, `libFPDIFor3P.so` (FairPlay / ADI), `libmediaplatform.so`, `libAMSKit.so`… | Native DRM: the mod touches nothing native and nothing in playback |
 
 ---
 
-## 5. Points d'accroche retenus pour le module
+## 5. Hook points used by the patch
 
-1. **Hook `BlurView.draw(Canvas)`** (nom stable). Pour les vues `bottom_nav_blur` et `mini_player_blur` (ids via `getIdentifier`, optionnellement `floating_search_bar_blur` et `top_nav_blur`) : remplacer, **une seule fois par instance**, le contrôleur (seul champ de type interface) par un **`java.lang.reflect.Proxy`** qui implémente cette interface :
-   - méthode `(Canvas)boolean` → notre rendu Liquid Glass, renvoie `true` (BlurView dessine ensuite son fond et ses enfants) ;
-   - toutes les autres méthodes → transmises au contrôleur d'origine (cycle de vie intact) ; si le délégué renvoie lui-même, renvoyer le proxy.
-   - Si Apple rappelle `setupWith` (nouveau contrôleur), le hook le détecte au `draw` suivant et ré-enveloppe.
-2. **Source du fond** : `BlurTarget` (id `blur_target`, ou parent `BlurTarget` le plus proche) → son champ `RenderNode`, retrouvé par type. Aucun enregistrement supplémentaire, aucun risque de récursion : la cible ne contient pas les pilules.
-3. **Teinte** : sur `bottom_nav_view` et `mini_player_content`, le fond est un `LayerDrawable`. On baisse l'alpha des couches `material_layer` / `artwork_color_scheme_layer` via `findDrawableByLayerId(getIdentifier(...))`, ou on les remplace par la teinte Backdrop (`#121212` à 40 % en sombre, `#FAFAFA` à 40 % en clair). On garde le contour fin, qui fait office de liseré.
-4. **Position** : un `OnPreDrawListener` par pilule invalide la BlurView quand sa position dans la cible change (animations du mini-player, apparition du clavier…).
-5. **Repli** : API < 31 ou canvas logiciel → on n'installe pas le proxy (rendu Apple d'origine). API 31-32 → flou + saturation, sans réfraction AGSL.
+1. `BlurView.draw(Canvas)` (stable name). The patch inserts a call to `LiquidGlassPatch.drawBlurView(this, canvas)` at the start of the method. When it returns `true`, the method calls `super.draw(canvas)` (background and children) and returns, which skips the original blur. Targeted views, by resource name: `bottom_nav_blur` and `mini_player_blur`, plus `floating_search_bar_blur` and `top_nav_blur` when the "Search bar" option is on. An LSPosed module can hook the same method.
+2. Background source: the `BlurTarget` set up by Apple, read from the controller (the only field with an interface type, then its `BlurTarget` field), or else the closest neighbouring `BlurTarget`. Its `RenderNode` field is found by type. There is no extra recording and no risk of recursion, because the target does not contain the pills.
+3. Tint: on `bottom_nav_view` and `mini_player_content`, the background is a `LayerDrawable`. The extension lowers the alpha of the `material_layer` / `artwork_color_scheme_layer` layers through `findDrawableByLayerId(getIdentifier(...))`. The thin stroke belongs to `material_layer` and fades with it; the extension draws its own highlight on the edge instead.
+4. Position: an `OnPreDrawListener` per pill invalidates the BlurView when its position inside the target changes (mini player animations, the keyboard opening…).
+5. Fallback: API < 31 or a software canvas → Apple's original rendering. API 31-32 → blur + saturation, without the AGSL refraction.

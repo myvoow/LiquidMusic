@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-LiquidMusic — inspection minimale des DEX d'un APK / APKM (stdlib uniquement).
+LiquidMusic - minimal inspection of the DEX files of an APK / APKM (standard library only).
 
-Sert à retrouver, dans du code obfusqué par R8, les classes / champs / méthodes
-que le module LSPosed doit cibler (sans jadx).
+Finds, in code obfuscated by R8, the classes, fields and methods a patch has to
+target, without jadx.
 
-Exemples :
+Examples:
     python3 -I tools/dex_inspect.py app.apkm class 'eightbitlab/com/blurview/BlurView;'
     python3 -I tools/dex_inspect.py app.apkm implements 'Leightbitlab/com/blurview/'
     python3 -I tools/dex_inspect.py app.apkm field-type 'Landroid/graphics/RenderNode;'
@@ -33,7 +33,7 @@ def flags_str(f: int) -> str:
     return " ".join(n for b, n in ACC if f & b)
 
 
-# Taille (en unités de 16 bits) des instructions Dalvik, par opcode.
+# Size of each Dalvik instruction, in 16-bit code units, by opcode.
 def _insn_sizes() -> list[int]:
     s = [1] * 256
     two = [0x02, 0x05, 0x08, 0x13, 0x15, 0x16, 0x19, 0x1A, 0x1C, 0x1F, 0x20, 0x22, 0x23, 0x29, 0x2D, 0x2E, 0x2F,
@@ -133,7 +133,7 @@ class Dex:
         return fields, methods
 
     def code_refs(self, code_off: int):
-        """Itère sur (opcode, index) des instructions qui référencent méthodes / champs / types / chaînes."""
+        """Yields (kind, index) for the instructions that reference methods, fields, types or strings."""
         if not code_off:
             return
         d = self.d
@@ -211,17 +211,17 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("package")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("class", help="décrit les classes dont le descripteur correspond à la regex")
+    p = sub.add_parser("class", help="describes the classes whose descriptor matches the regex")
     p.add_argument("regex")
-    p.add_argument("--code", action="store_true", help="liste les références de chaque méthode")
-    p = sub.add_parser("implements", help="classes qui étendent / implémentent un type correspondant")
+    p.add_argument("--code", action="store_true", help="lists the references of each method")
+    p = sub.add_parser("implements", help="classes that extend or implement a matching type")
     p.add_argument("regex")
-    p = sub.add_parser("field-type", help="champs dont le type correspond à la regex")
+    p = sub.add_parser("field-type", help="fields whose type matches the regex")
     p.add_argument("regex")
-    p = sub.add_parser("callers", help="méthodes qui appellent <classe regex>-><méthode regex>")
+    p = sub.add_parser("callers", help="methods that call <class regex>-><method regex>")
     p.add_argument("cls")
     p.add_argument("meth")
-    p = sub.add_parser("string-users", help="méthodes qui chargent une chaîne correspondant à la regex")
+    p = sub.add_parser("string-users", help="methods that load a string matching the regex")
     p.add_argument("regex")
     args = ap.parse_args()
 

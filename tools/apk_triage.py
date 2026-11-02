@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-LiquidMusic — triage d'un APK / APKM / XAPK / APKS (stdlib uniquement).
+LiquidMusic - triage of an APK / APKM / XAPK / APKS (standard library only).
 
-Répond aux questions de la phase 0 du plan (voir PLAN.md) sans apktool ni jadx :
-  * version, minSdk / targetSdk, activité de lancement ;
-  * l'app embarque-t-elle Jetpack Compose (et quelles versions) ?
-  * quels noms de ressources ressemblent à la barre d'onglets / au mini-player ?
-  * quelles classes / API sensibles sont référencées (BottomNavigationView,
-    ComposeView, RenderEffect, RuntimeShader, vérification de signature,
-    Play Integrity...) ?
-  * quelles bibliothèques natives sont présentes ?
+Answers the first questions about an app without apktool or jadx:
+  * version, minSdk / targetSdk, launcher activity;
+  * does the app ship Jetpack Compose, and which versions?
+  * which resource names look like the tab bar or the mini player?
+  * which sensitive classes and APIs are referenced (BottomNavigationView,
+    ComposeView, RenderEffect, RuntimeShader, signature checks,
+    Play Integrity...)?
+  * which native libraries are present?
 
-Usage :
-    python3 -I tools/apk_triage.py chemin/vers/AppleMusic.apkm [--json out.json]
+Usage:
+    python3 -I tools/apk_triage.py path/to/AppleMusic.apkm [--json out.json]
 """
 
 from __future__ import annotations
@@ -27,10 +27,10 @@ import zipfile
 from collections import defaultdict
 
 # --------------------------------------------------------------------------- #
-# Motifs recherchés
+# Search patterns
 # --------------------------------------------------------------------------- #
 
-# Noms de ressources (layouts, ids, dimens...) qui ressemblent aux éléments visés.
+# Resource names (layouts, ids, dimens...) that look like the targeted views.
 RES_NAME_PATTERNS = re.compile(
     r"(tab_?bar|bottom_?nav|navigation_?bar|nav_?bar|bottom_?bar|"
     r"mini_?player|miniplayer|now_?playing|playback_?bar|player_?bar|"
@@ -38,11 +38,11 @@ RES_NAME_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-# Chaînes de DEX intéressantes : (étiquette, regex sur la chaîne complète).
+# DEX strings of interest: (label, regex on the whole string).
 DEX_MARKERS = [
-    # Sections de trace du runtime Compose : survivent à l'obfuscation R8.
-    ("Compose: traces runtime (fiable même obfusqué)", r"^Compose:(recompose|applyChanges)$"),
-    ("Compose: AndroidComposeView (msg d'erreur)", r"^Cannot locate windowRecomposer"),
+    # Trace sections of the Compose runtime: they survive R8 obfuscation.
+    ("Compose: runtime traces (reliable when obfuscated)", r"^Compose:(recompose|applyChanges)$"),
+    ("Compose: AndroidComposeView (error message)", r"^Cannot locate windowRecomposer"),
     ("Compose: ComposeView", r"^Landroidx/compose/ui/platform/ComposeView;$"),
     ("Compose: AbstractComposeView", r"^Landroidx/compose/ui/platform/AbstractComposeView;$"),
     ("Compose: runtime Composer", r"^Landroidx/compose/runtime/Composer;$"),
@@ -54,36 +54,36 @@ DEX_MARKERS = [
     ("Views: RecyclerView", r"^Landroidx/recyclerview/widget/RecyclerView;$"),
     ("Views: DataBinding", r"^Landroidx/databinding/ViewDataBinding;$"),
     ("Epoxy", r"^Lcom/airbnb/epoxy/"),
-    ("Rendu: RenderEffect", r"^Landroid/graphics/RenderEffect;$"),
-    ("Rendu: RuntimeShader (AGSL)", r"^Landroid/graphics/RuntimeShader;$"),
-    ("Rendu: RenderNode", r"^Landroid/graphics/RenderNode;$"),
-    ("Rendu: BlurMaskFilter", r"^Landroid/graphics/BlurMaskFilter;$"),
-    ("Rendu: setRenderEffect", r"^setRenderEffect$"),
-    ("Rendu: Backdrop (Kyant)", r"^Lcom/kyant/backdrop/"),
-    ("Sécurité: signingInfo", r"^signingInfo$|^getSigningInfo$|^getApkContentsSigners$"),
-    ("Sécurité: Play Integrity", r"com/google/android/play/core/integrity"),
-    ("Sécurité: SafetyNet", r"com/google/android/gms/safetynet"),
-    ("Sécurité: PairIP / licence Play", r"com/pairip/|com/android/vending/licensing"),
-    ("Sécurité: détection root/Xposed", r"(?i)de/robv/android/xposed|xposedbridge|lsposed|magisk|/system/xbin/su"),
+    ("Rendering: RenderEffect", r"^Landroid/graphics/RenderEffect;$"),
+    ("Rendering: RuntimeShader (AGSL)", r"^Landroid/graphics/RuntimeShader;$"),
+    ("Rendering: RenderNode", r"^Landroid/graphics/RenderNode;$"),
+    ("Rendering: BlurMaskFilter", r"^Landroid/graphics/BlurMaskFilter;$"),
+    ("Rendering: setRenderEffect", r"^setRenderEffect$"),
+    ("Rendering: Backdrop (Kyant)", r"^Lcom/kyant/backdrop/"),
+    ("Security: signingInfo", r"^signingInfo$|^getSigningInfo$|^getApkContentsSigners$"),
+    ("Security: Play Integrity", r"com/google/android/play/core/integrity"),
+    ("Security: SafetyNet", r"com/google/android/gms/safetynet"),
+    ("Security: PairIP / Play licensing", r"com/pairip/|com/android/vending/licensing"),
+    ("Security: root/Xposed detection", r"(?i)de/robv/android/xposed|xposedbridge|lsposed|magisk|/system/xbin/su"),
 ]
 
-# Noms de classes de l'app ressemblant aux éléments visés (non obfusqués).
+# App class names (not obfuscated) that look like the targeted views.
 APP_CLASS_PATTERN = re.compile(
     r"^L(com/apple/[A-Za-z0-9_/$]*(Tab|BottomNav|Navigation|MiniPlayer|Miniplayer|"
     r"NowPlaying|PlaybackBar|PlayerBar|MainContent|MainActivity)[A-Za-z0-9_$]*);$"
 )
 
 # --------------------------------------------------------------------------- #
-# Lecture des conteneurs (apk, apkm, xapk, apks)
+# Reading the containers (apk, apkm, xapk, apks)
 # --------------------------------------------------------------------------- #
 
 
 def open_apks(path: str) -> dict[str, zipfile.ZipFile]:
-    """Retourne {nom: ZipFile} pour chaque APK contenu (ou l'APK lui-même)."""
+    """Returns {name: ZipFile} for each APK inside (or the APK itself)."""
     try:
         outer = zipfile.ZipFile(path)
     except zipfile.BadZipFile:
-        sys.exit(f"{path} n'est pas une archive zip lisible (APKM chiffré ? ré-exporter avec SAI / APKMirror Installer).")
+        sys.exit(f"{path} is not a readable zip archive (encrypted APKM? export it again with SAI / APKMirror Installer).")
     names = outer.namelist()
     if "AndroidManifest.xml" in names:
         return {"base.apk": outer}
@@ -92,7 +92,7 @@ def open_apks(path: str) -> dict[str, zipfile.ZipFile]:
         if name.lower().endswith(".apk"):
             apks[name] = zipfile.ZipFile(io.BytesIO(outer.read(name)))
     if not apks:
-        sys.exit(f"Aucun APK trouvé dans {path}")
+        sys.exit(f"No APK found in {path}")
     return apks
 
 
@@ -104,7 +104,7 @@ def pick_base(apks: dict[str, zipfile.ZipFile]) -> tuple[str, zipfile.ZipFile]:
 
 
 # --------------------------------------------------------------------------- #
-# Binary XML (AXML) minimal : suffisant pour AndroidManifest.xml
+# Minimal binary XML (AXML) reader: enough for AndroidManifest.xml
 # --------------------------------------------------------------------------- #
 
 ANDROID_ATTR_IDS = {
@@ -129,7 +129,7 @@ def _read_string_pool(data: bytes, off: int) -> list[str]:
     for o in offsets:
         p = base + o
         if utf8:
-            # longueur en caractères puis en octets (1 ou 2 octets chacune)
+            # length in characters, then in bytes (1 or 2 bytes each)
             n = data[p]
             p += 2 if n & 0x80 else 1
             n = data[p]
@@ -150,11 +150,11 @@ def _read_string_pool(data: bytes, off: int) -> list[str]:
 
 
 def parse_axml(data: bytes) -> list[tuple[str, dict[str, object]]]:
-    """Retourne la liste des éléments (tag, {attr: valeur}) dans l'ordre."""
+    """Returns the elements (tag, {attr: value}) in document order."""
     strings: list[str] = []
     res_ids: list[int] = []
     elements = []
-    off = 8  # en-tête du fichier
+    off = 8  # file header
     while off < len(data):
         ctype, hsize, csize = struct.unpack_from("<HHI", data, off)
         if csize == 0:
@@ -214,7 +214,7 @@ def manifest_summary(base: zipfile.ZipFile) -> dict[str, object]:
 
 
 # --------------------------------------------------------------------------- #
-# DEX : table des chaînes
+# DEX: string table
 # --------------------------------------------------------------------------- #
 
 
@@ -252,7 +252,7 @@ def analyse(path: str) -> dict[str, object]:
 
     report["manifest"] = manifest_summary(base)
 
-    # Versions des bibliothèques AndroidX / Compose (META-INF/*.version)
+    # Versions of the AndroidX / Compose libraries (META-INF/*.version)
     versions = {}
     for name in base.namelist():
         if name.startswith("META-INF/") and name.endswith(".version"):
@@ -286,13 +286,13 @@ def analyse(path: str) -> dict[str, object]:
     report["dex_markers"] = markers
     report["app_classes_of_interest"] = sorted(app_classes)[:300]
 
-    # Noms de ressources (table de resources.arsc, hors bibliothèques Material/AppCompat)
+    # Resource names (resources.arsc table, without the Material/AppCompat libraries)
     res_hits = set()
     if "resources.arsc" in base.namelist():
         from pathlib import Path
 
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from apk_res import ResTable  # import tardif : apk_res importe ce module
+        from apk_res import ResTable  # late import: apk_res imports this module
 
         table = ResTable(base.read("resources.arsc"))
         lib_prefixes = ("m3_", "mtrl_", "abc_", "design_", "material_", "exo_")
@@ -307,7 +307,7 @@ def analyse(path: str) -> dict[str, object]:
     report["resource_names_of_interest"] = sorted(res_hits)[:400]
     report["layout_files_of_interest"] = layout_hits[:200]
 
-    # Layouts contenant des widgets clés (les layouts compilés gardent les noms de classes)
+    # Layouts with key widgets (compiled layouts keep the class names)
     widget_usage = defaultdict(list)
     for n in layouts:
         try:
@@ -326,7 +326,7 @@ def analyse(path: str) -> dict[str, object]:
                 widget_usage[t].append(n)
     report["layouts_with_key_widgets"] = {k: sorted(v)[:30] for k, v in sorted(widget_usage.items())}
 
-    # Bibliothèques natives (toutes les splits)
+    # Native libraries (all splits)
     natives = set()
     for z in apks.values():
         for n in z.namelist():
@@ -341,76 +341,76 @@ def analyse(path: str) -> dict[str, object]:
 def verdict_hints(r: dict[str, object]) -> list[str]:
     hints = []
     m = r["dex_markers"]
-    compose = bool(r["compose_libs"]) or bool(m["Compose: traces runtime (fiable même obfusqué)"])
+    compose = bool(r["compose_libs"]) or bool(m["Compose: runtime traces (reliable when obfuscated)"])
     views_nav = m["Views: BottomNavigationView"] or m["Views: NavigationBarView"]
     if compose and not views_nav:
-        hints.append("Compose présent et aucune BottomNavigationView : la barre est probablement en Compose -> variante B du plan.")
+        hints.append("Compose present and no BottomNavigationView: the tab bar is probably drawn by Compose, which is harder to patch.")
     elif compose and views_nav:
-        hints.append("App hybride Views + Compose : vérifier sur l'appareil (dumpsys activity top) qui dessine la barre.")
+        hints.append("Hybrid Views + Compose app: check on the device (dumpsys activity top) which one draws the tab bar.")
     else:
-        hints.append("Pas de Compose : UI en Views -> variante A du plan (la plus simple).")
-    if m["Sécurité: Play Integrity"] or m["Sécurité: PairIP / licence Play"]:
-        hints.append("Play Integrity / licence Play référencés : le chemin sans root (LSPatch, re-signature) est à risque.")
-    if m["Sécurité: signingInfo"]:
-        hints.append("L'app lit des signatures de paquets : tester la re-signature tôt (peut être une simple vérif. d'autres apps).")
-    if m["Sécurité: détection root/Xposed"]:
-        hints.append("Chaînes de détection root/Xposed trouvées : prévoir un masquage (Shamiko/HMA) côté LSPosed.")
+        hints.append("No Compose: the UI is built with Views, the simplest case to patch.")
+    if m["Security: Play Integrity"] or m["Security: PairIP / Play licensing"]:
+        hints.append("Play Integrity / Play licensing referenced: a re-signed APK (Morphe, LSPatch) may be refused.")
+    if m["Security: signingInfo"]:
+        hints.append("The app reads package signatures: test a re-signed APK early (it may only check other apps).")
+    if m["Security: root/Xposed detection"]:
+        hints.append("Root/Xposed detection strings found: plan to hide root (Shamiko/HMA) when using LSPosed.")
     mn = r["manifest"].get("minSdk")
     if isinstance(mn, int) and mn < 33:
-        hints.append(f"minSdk={mn} : réfraction (AGSL) seulement sur Android 13+, flou seul sur 12, repli opaque en dessous.")
+        hints.append(f"minSdk={mn}: refraction (AGSL) only on Android 13+, blur only on 12, original look below.")
     return hints
 
 
 def print_report(r: dict[str, object]) -> None:
     man = r["manifest"]
-    print(f"Fichier      : {r['file']}")
+    print(f"File         : {r['file']}")
     print(f"APKs         : {', '.join(r['apks'])}")
-    print(f"Paquet       : {man.get('package')}  v{man.get('versionName')} ({man.get('versionCode')})")
-    print(f"SDK          : min {man.get('minSdk')} / cible {man.get('targetSdk')}")
-    print(f"Lanceur      : {man.get('launcher')}")
-    print(f"Activités    : {len(man['activities'])}")
+    print(f"Package      : {man.get('package')}  v{man.get('versionName')} ({man.get('versionCode')})")
+    print(f"SDK          : min {man.get('minSdk')} / target {man.get('targetSdk')}")
+    print(f"Launcher     : {man.get('launcher')}")
+    print(f"Activities   : {len(man['activities'])}")
     print(f"DEX          : {r['dex_count']}")
     print()
     print("== Compose ==")
-    print(f"  descripteurs androidx.compose.* : {r['compose_type_descriptors']}")
+    print(f"  androidx.compose.* descriptors: {r['compose_type_descriptors']}")
     for k, v in r["compose_libs"].items():
         print(f"  {k} = {v}")
-    print("\n== Bibliothèques notables ==")
+    print("\n== Notable libraries ==")
     for k, v in r["notable_libs"].items():
         print(f"  {k} = {v}")
-    print("\n== Marqueurs DEX ==")
+    print("\n== DEX markers ==")
     for k, v in r["dex_markers"].items():
         print(f"  {'✔' if v else '·'} {k}: {v}")
-    print("\n== Classes de l'app (non obfusquées) liées à la nav / au lecteur ==")
+    print("\n== App classes (not obfuscated) related to navigation / the player ==")
     for c in r["app_classes_of_interest"][:80]:
         print(f"  {c}")
-    print("\n== Layouts contenant des widgets clés ==")
+    print("\n== Layouts with key widgets ==")
     for k, v in r["layouts_with_key_widgets"].items():
         print(f"  {k}: {', '.join(v[:8])}{' …' if len(v) > 8 else ''}")
-    print("\n== Fichiers de layout au nom intéressant ==")
+    print("\n== Layout files with a matching name ==")
     for n in r["layout_files_of_interest"][:60]:
         print(f"  {n}")
-    print("\n== Noms de ressources intéressants ==")
+    print("\n== Matching resource names ==")
     print("  " + ", ".join(r["resource_names_of_interest"][:150]))
-    print("\n== Bibliothèques natives ==")
+    print("\n== Native libraries ==")
     for n in r["native_libs"]:
         print(f"  {n}")
-    print("\n== Pistes ==")
+    print("\n== Hints ==")
     for h in r["verdict_hints"]:
         print(f"  -> {h}")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("package", help=".apk, .apkm, .xapk ou .apks")
-    ap.add_argument("--json", help="écrit aussi le rapport complet en JSON")
+    ap.add_argument("package", help=".apk, .apkm, .xapk or .apks")
+    ap.add_argument("--json", help="also writes the full report as JSON")
     args = ap.parse_args()
     report = analyse(args.package)
     print_report(report)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
-        print(f"\nRapport JSON : {args.json}")
+        print(f"\nJSON report: {args.json}")
 
 
 if __name__ == "__main__":
