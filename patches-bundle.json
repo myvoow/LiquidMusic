@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-11-02T11:28:53",
-  "description": "## 1.0.0 (2026-11-02)\n\n### ✨ New Features\n\n* Add Liquid Glass patch for Apple Music (Morphe patch source) ([5bb57b1](https://github.com/myvoow/LiquidMusic/commit/5bb57b1920ebccb01199d37640e0af445a316d45))",
-  "download_url": "https://github.com/myvoow/LiquidMusic/releases/download/v1.0.0/patches-1.0.0.mpp",
+  "created_at": "2026-11-02T11:35:00",
+  "description": "## [1.0.1](https://github.com/myvoow/LiquidMusic/compare/v1.0.0...v1.0.1) (2026-11-02)\n\n### 🐛 Bug Fixes\n\n* Ship only the extension classes in liquidglass.mpe ([1e4df4c](https://github.com/myvoow/LiquidMusic/commit/1e4df4c22b38610efe025a4d100c7b79cf211da9))",
+  "download_url": "https://github.com/myvoow/LiquidMusic/releases/download/v1.0.1/patches-1.0.1.mpp",
   "signature_download_url": "",
-  "version": "1.0.0"
+  "version": "1.0.1"
 }
