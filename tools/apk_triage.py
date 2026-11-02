@@ -34,7 +34,7 @@ from collections import defaultdict
 RES_NAME_PATTERNS = re.compile(
     r"(tab_?bar|bottom_?nav|navigation_?bar|nav_?bar|bottom_?bar|"
     r"mini_?player|miniplayer|now_?playing|playback_?bar|player_?bar|"
-    r"floating|pill|glass|blur|translucen)",
+    r"floating|_pill|pill_|glass|blur|translucen)",
     re.IGNORECASE,
 )
 
@@ -286,14 +286,22 @@ def analyse(path: str) -> dict[str, object]:
     report["dex_markers"] = markers
     report["app_classes_of_interest"] = sorted(app_classes)[:300]
 
-    # Noms de ressources (resources.arsc + layouts)
+    # Noms de ressources (table de resources.arsc, hors bibliothèques Material/AppCompat)
     res_hits = set()
     if "resources.arsc" in base.namelist():
-        arsc = base.read("resources.arsc")
-        for m in re.finditer(rb"[A-Za-z0-9_.]{4,80}", arsc):
-            s = m.group().decode()
-            if RES_NAME_PATTERNS.search(s):
-                res_hits.add(s)
+        from pathlib import Path
+
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from apk_res import ResTable  # import tardif : apk_res importe ce module
+
+        table = ResTable(base.read("resources.arsc"))
+        lib_prefixes = ("m3_", "mtrl_", "abc_", "design_", "material_", "exo_")
+        for name in table.names.values():
+            entry = name.split("/", 1)[1]
+            if RES_NAME_PATTERNS.search(entry) and not entry.startswith(lib_prefixes + ("$",)) \
+                    and "ActionButton" not in entry and "magnifyingglass" not in entry \
+                    and name.split("/", 1)[0] in ("id", "layout", "drawable", "color", "dimen", "attr"):
+                res_hits.add(name)
     layouts = [n for n in base.namelist() if n.startswith("res/") and n.endswith(".xml")]
     layout_hits = sorted(n for n in layouts if RES_NAME_PATTERNS.search(n.rsplit("/", 1)[-1]))
     report["resource_names_of_interest"] = sorted(res_hits)[:400]

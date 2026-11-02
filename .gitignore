@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.apk
+*.apkm
+*.xapk
+*.apks
+triage*.json
