@@ -43,16 +43,22 @@ https://github.com/myvoow/LiquidMusic
 4. Uninstall the official Apple Music, since the patched app has a different signature, then install the patched one.
 
 > [!WARNING]
-> Morphe re-signs the app, and Apple Music sends a Play Integrity token when you sign in and when you pay ([details](docs/apple-music-7.0.0-beta.md#4-security-and-the-non-root-path)). Apple may refuse a re-signed copy at sign-in or when you subscribe. This has not been tested yet: sign in and play a song before you delete the downloads of the official app.
+> Morphe re-signs the app, and Apple Music sends a Play Integrity token when you sign in and when you pay ([details](docs/apple-music-7.0.0-beta.md#4-security-and-the-non-root-path)). Apple may refuse a re-signed copy at sign-in or when you subscribe. On the first device test, sign-in worked; subscribing and paying are untested. Sign in and play a song before you delete the downloads of the official app.
 
 ## What you get
 
+<p align="center">
+  <img src=".github/assets/preview.png" alt="Apple's blur next to Liquid Glass on the mini player and the tab bar" width="100%">
+  <br>
+  <sub>Rendered by <a href="tools/glass-preview">tools/glass-preview</a> with Android's own renderer, on a stand-in for Apple Music's layout.</sub>
+</p>
+
 | | Apple Music 7.0 | With Liquid Glass |
 |---|---|---|
-| Content behind the bar | 16 px blur | 8 dp blur, colors boosted to 150% |
+| Content behind the bar | 64 px blur, almost unreadable | 8 dp blur, colors boosted to 150% |
 | Edges | flat | bent like a lens (Android 13+) |
-| Tint on top | 55–60% opaque | 40% of Apple's tint |
-| Rim | thin stroke | specular highlight |
+| Tint on top | two layers at 60% | 40% of Apple's tint, also after the player colors change |
+| Rim | thin stroke | specular highlight, drawn over the tint |
 | Surfaces | tab bar, mini player | tab bar, mini player, search bar |
 
 | Android | Result |
@@ -106,14 +112,15 @@ Apple Music 7.0 already blurs what is under the tab bar and the mini player with
 
 ```mermaid
 flowchart LR
-    A["Screen content<br/>(BlurTarget RenderNode)"] --> B["Vibrancy<br/>saturation"]
+    A["Window background<br/>+ screen content<br/>(BlurTarget RenderNode)"] --> B["Vibrancy<br/>saturation"]
     B --> C["Blur"]
     C --> D["Lens<br/>AGSL refraction"]
-    D --> E["Clip to the pill<br/>+ edge highlight"]
-    E --> F["Icons and text<br/>drawn on top"]
+    D --> E["Clip to the pill"]
+    E --> F["Apple's tint, faded<br/>+ icons and text"]
+    F --> G["Edge highlight"]
 ```
 
-The extension also fades Apple's translucent material so the glass shows through. If anything goes wrong (an unknown view, Android 11, an error), it hands drawing back to Apple's blur, so the app never crashes because of the patch.
+The window background goes first, as in Apple's blur, so the glass is opaque and nothing sharp shows through it. Apple's translucent material is faded on every frame, because Apple sets it again whenever the colors of the player change, and the rim is drawn over it. If anything goes wrong (an unknown view, Android 11, an error), the extension hands drawing back to Apple's blur, so the app never crashes because of the patch.
 
 Full write-up: [PLAN.md](PLAN.md) and [the Apple Music 7.0.0-beta analysis](docs/apple-music-7.0.0-beta.md).
 
@@ -166,11 +173,14 @@ The extra work is limited to the area of the pills. If your phone struggles, pat
 The project follows the official [Morphe patches template](https://github.com/MorpheApp/morphe-patches-template):
 
 ```
-patches/      # Morphe patches (Kotlin) → patches-<version>.mpp
-extensions/   # Android code bundled into the patched app (Java) → liquidglass.mpe
-tools/        # APK analysis with no dependencies (Python stdlib)
-docs/         # analysis of each Apple Music version
+patches/              # Morphe patches (Kotlin) → patches-<version>.mpp
+extensions/           # Android code bundled into the patched app (Java) → liquidglass.mpe
+tools/*.py            # APK analysis with no dependencies (Python stdlib)
+tools/glass-preview/  # renders the glass on the JVM, without a phone
+docs/                 # analysis of each Apple Music version
 ```
+
+**Previewing the glass.** `./gradlew -p tools/glass-preview testDebugUnitTest` draws the tab bar and the mini player over album covers, with Apple's blur and with the glass, and writes the images to `tools/glass-preview/build/preview/`. Robolectric runs Android's real renderer (hwui), so RenderNode, RenderEffect and the AGSL shaders really execute. The views stand in for Apple Music's: same class names, same fields, same resources. The test also fails if the content under the glass stays sharp, or if Apple's tint is not faded after a color change. Both bugs reached a phone in 1.0.1. It needs an Android SDK, and nothing from Apple.
 
 **Building locally.** Run `./gradlew buildAndroid`. You need an Android SDK and a GitHub token with `read:packages` in `~/.gradle/gradle.properties` (`gpr.user`, `gpr.key`) to download the Morphe plugin. The output is `patches/build/libs/patches-*.mpp`, which you can test with [Morphe Desktop](https://github.com/MorpheApp/morphe-desktop).
 

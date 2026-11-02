@@ -16,7 +16,7 @@ The Apple Music 7.0.0-beta APKM (versionCode 1606, minSdk 30) uses classic Views
 
 - a `BlurTarget` (`blur_target`) records the content into a `RenderNode`;
 - two pill-shaped `BlurView`s (`bottom_nav_blur`, `mini_player_blur`) blur it;
-- the near-opaque look comes from a 16 px blur covered by two tint layers at 55-60% (`bg_apple_material`).
+- the near-opaque look comes from a 64 px blur (radius 16 × scale factor 4) of the window background and the content, covered by two tint layers at 55-60% (`bg_apple_material`).
 
 The patch keeps this setup. It only replaces how the BlurViews draw, with Liquid Glass, and lightens the tint.
 
@@ -28,7 +28,7 @@ By Android version:
 
 ### Main risk: Play Integrity
 
-Morphe re-signs the APK, and Apple Music sends a Play Integrity token (`AppIntegrityManager`, `appIntegrityToken`) in its account and commerce flows. Apple may therefore refuse sign-in or the subscription for a re-signed copy. This is not tested yet, and it is the first thing to check on a device (§4). If it blocks, the same extension code can ship as an LSPosed module, which does not re-sign the APK (§5).
+Morphe re-signs the APK, and Apple Music sends a Play Integrity token (`AppIntegrityManager`, `appIntegrityToken`) in its account and commerce flows. Apple may therefore refuse sign-in or the subscription for a re-signed copy. On the first device test (1.0.1), sign-in worked: the Home page showed the account's own recommendations. Subscribing and paying are untested (§4). If it blocks, the same extension code can ship as an LSPosed module, which does not re-sign the APK (§5).
 
 ---
 
@@ -65,8 +65,10 @@ patches/src/main/kotlin/app/liquidmusic/patches/applemusic/
 extensions/liquidglass/src/main/java/app/liquidmusic/extension/
 ├── LiquidGlassPatch.java               # entry point drawBlurView(View, Canvas) + option getters
 ├── GlassRenderer.java                  # glass rendering (RenderNode, RenderEffect, AGSL), tint, position tracking
+├── GlassRim.java                       # specular rim, drawn in the overlay of the view over the glass
 ├── BlurViewAccess.java                 # finds the obfuscated fields of BlurView v3 by type
 └── GlassShaders.java                   # AGSL shaders ported from Backdrop (refraction, dispersion, highlight)
+tools/glass-preview/                    # renders the glass on the JVM (Robolectric + hwui), with stand-ins for Apple's views
 ```
 
 ### The patch (bytecode)
@@ -103,11 +105,11 @@ The Manager options reach the extension: the patch replaces the bodies of its ge
 1. Target: the resource name of the BlurView. Always `bottom_nav_blur` and `mini_player_blur`; optionally `floating_search_bar_blur` and `top_nav_blur`. Other BlurViews, such as `drawer_blur`, keep Apple's blur.
 2. Source: the `BlurTarget` that Apple set up. The extension reads it from the controller of the BlurView (the only field with an interface type), or else looks for a neighbouring `BlurTarget`. It then takes the `RenderNode` field of the target, found by type.
 3. Rendering:
-   - a `RenderNode` the size of the pill plus one blur radius, which references the node of the BlurTarget at the right offset;
+   - a `RenderNode` the size of the pill plus one blur radius, which first draws the window background (as Apple's "frame clear" drawable does), then references the node of the BlurTarget at the right offset;
    - the chain `saturation → createBlurEffect → createRuntimeShaderEffect(refraction)`;
    - clipping to the shape (radius read from the `GradientDrawable` background, otherwise a capsule);
-   - Backdrop's highlight: a 0.5 dp stroke, AGSL shader, `BlendMode.PLUS`.
-4. Tint: the `material_layer` and `artwork_color_scheme_layer` layers of the `bottom_nav_view` / `mini_player_content` background go to the chosen opacity.
+   - Backdrop's highlight: a 0.5 dp stroke, AGSL shader, `BlendMode.PLUS`, in the overlay of `bottom_nav_view` / `mini_player_content`, so Apple's tint does not dim it.
+4. Tint: the `material_layer` and `artwork_color_scheme_layer` layers of the `bottom_nav_view` / `mini_player_content` background go to the chosen opacity, checked before every frame.
 5. Movement: an `OnPreDrawListener` redraws the pill when its position changes (mini player animation). Scrolling content needs nothing extra, since it propagates through the `RenderNode`.
 6. Safety: on Android < 12, on a software canvas, for an unknown view or after an exception, the extension returns `false` and BlurView draws its original blur. The patch cannot crash the app.
 
@@ -126,10 +128,17 @@ The Manager options reach the extension: the patch replaces the bodies of its ge
 
    `dev` must exist before any release of `main`: the backmerge plugin runs `checkout dev` after every stable release.
 5. Device test (Android 13+), in this order:
-   - Apple ID sign-in and playback on the patched APK (Play Integrity);
+   - Apple ID sign-in and playback on the patched APK (Play Integrity). With 1.0.1, the patched app installed and signed in; playback is still to confirm;
    - rendering of the tab bar and the mini player (scrolling, opening and closing the player, artwork change, light and dark);
    - performance (`adb shell dumpsys gfxinfo com.apple.android.music framestats`);
    - Android 12 (no refraction).
+
+   What the 1.0.1 screenshot showed, and how 1.0.2 fixes it:
+   - the content under the tab bar was sharp. The glass was drawn, but transparent: BlurTarget only records its children, and Apple's blur gets its opaque base from the window background (`setFrameClearDrawable(decorView.background)`). The glass now draws that background first;
+   - Apple's tint was back at full opacity. Apple replaces `material_layer` and resets the alpha of `artwork_color_scheme_layer` whenever the colors of the player change (`Aa.a0.c`), after the extension had faded them once. The fade is now checked before every frame;
+   - the rim was barely visible, since it was drawn under that tint. It now sits in the overlay of the view drawn over the glass.
+
+   `tools/glass-preview` reproduces both rendering bugs with the 1.0.1 code, and its test fails on them.
 6. Tune the default values after comparing with iOS 26.
 7. Optional:
    - sign the Releases (`generateSigningKey`);

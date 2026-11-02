@@ -50,7 +50,7 @@ The tablet variants (`layout-w600dp`, `layout-w675dp`, `layout-w735dp`) follow t
 
 Drawing order of a pill:
 
-1. `BlurView`: blur of the `BlurTarget`, radius 16 px (a constant passed to `setBlurRadius`, inlined in `oh.f.d()`). The layout sets no overlay color.
+1. `BlurView`: blur of the window background and the `BlurTarget`, radius 16 (a constant passed to `setBlurRadius`, inlined in `oh.f.d()`) times the scale factor 4, so `createBlurEffect(64, 64)`. The layout sets no overlay color.
 2. On top, the content view (`bottom_nav_view` / `mini_player_content`) has `bg_apple_material` as its background, a `layer-list`:
    - `@id/artwork_color_scheme_layer` → `layer_artwork_color_scheme` (pill shape, `apple_material_background`);
    - `@id/material_layer` → `layer_apple_material` (pill shape, `apple_material_background`, stroke `apple_material_stroke` of width `apple_material_bg_stroke`).
@@ -61,7 +61,14 @@ Drawing order of a pill:
 | `apple_material_background_thick` | `#bff5f5f7` (75%) | `#bf262628` (75%) |
 | `apple_material_stroke` | `#1a000000` | `#33ffffff` |
 
-With two layers at 60% over a weak blur, only ~16% of the background stays visible, hence "a little translucency". `corner_radius_pill` = 80dp, so the shape is a capsule.
+With two layers at 60% over a strong blur, only ~16% of the background stays visible, hence "a little translucency". `corner_radius_pill` = 80dp, so the shape is a capsule.
+
+Apple changes this material at runtime. `MusicContentFragment.onCreateView` keeps the mutated `LayerDrawable` of `bottom_nav_view`, and every value of `MainActivityViewModel.getFloatingElementColorScheme()` goes through `Aa.a0.c(LayerDrawable, scheme)`:
+
+- `artwork_color_scheme_layer`: `setAlpha(255)` for the default scheme, otherwise a color taken from the artwork, a saturation filter (×2.2) and `setAlpha(0.6 × 255)` or `setAlpha(0.55 × 255)`;
+- `material_layer`: replaced with a fresh `layer_apple_material` (or one of its two variants) through `setDrawableByLayerId`, so at full alpha.
+
+A change made to these layers once is therefore undone at the next color change, at the latest when the first song loads.
 
 ---
 
@@ -92,8 +99,10 @@ How `oh.f.g(Canvas)` works (API 31+ with a hardware canvas):
 Calls on Apple's side:
 
 - `MainActivity.onCreate`: `binding.b0 (BlurView).setupWith(binding.Z (BlurTarget)).setBlurRadius(16).setFrameClearDrawable(decorView.background)` for `drawer_blur`;
-- lambda `Vb.x` (content fragment): the same chain for `bottom_nav_blur` / `mini_player_blur` with `q8/R4.Z` (`blur_target`);
+- `MusicContentFragment.onViewCreated`, through the lambda `Vb.x`: the same chain for `bottom_nav_blur` (`q8/R4.a0`), `top_nav_blur` (`h0`) and `mini_player_blur` (`d0`), with `q8/R4.Z` (`blur_target`), unconditionally;
 - `SearchLandingFragment.onViewCreated`: the same for `floating_search_bar_blur`.
+
+The frame clear drawable matters: `BlurTarget` only records its children, and the black of the screen is the window background, outside the target. Without it, the blurred node is transparent wherever the app draws no background of its own, and the sharp content behind the pill shows through.
 
 ---
 
@@ -112,6 +121,6 @@ Calls on Apple's side:
 
 1. `BlurView.draw(Canvas)` (stable name). The patch inserts a call to `LiquidGlassPatch.drawBlurView(this, canvas)` at the start of the method. When it returns `true`, the method calls `super.draw(canvas)` (background and children) and returns, which skips the original blur. Targeted views, by resource name: `bottom_nav_blur` and `mini_player_blur`, plus `floating_search_bar_blur` and `top_nav_blur` when the "Search bar" option is on. An LSPosed module can hook the same method.
 2. Background source: the `BlurTarget` set up by Apple, read from the controller (the only field with an interface type, then its `BlurTarget` field), or else the closest neighbouring `BlurTarget`. Its `RenderNode` field is found by type. There is no extra recording and no risk of recursion, because the target does not contain the pills.
-3. Tint: on `bottom_nav_view` and `mini_player_content`, the background is a `LayerDrawable`. The extension lowers the alpha of the `material_layer` / `artwork_color_scheme_layer` layers through `findDrawableByLayerId(getIdentifier(...))`. The thin stroke belongs to `material_layer` and fades with it; the extension draws its own highlight on the edge instead.
+3. Tint: on `bottom_nav_view` and `mini_player_content`, the background is a `LayerDrawable`. The extension lowers the alpha of the `material_layer` / `artwork_color_scheme_layer` layers through `findDrawableByLayerId(getIdentifier(...))`, before every frame, since Apple sets them again on each color change. The thin stroke belongs to `material_layer` and fades with it; the extension draws its own highlight on the edge instead, in the overlay of the same view.
 4. Position: an `OnPreDrawListener` per pill invalidates the BlurView when its position inside the target changes (mini player animations, the keyboard opening…).
 5. Fallback: API < 31 or a software canvas → Apple's original rendering. API 31-32 → blur + saturation, without the AGSL refraction.
