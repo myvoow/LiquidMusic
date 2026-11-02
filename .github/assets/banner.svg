@@ -169,12 +169,10 @@
       <g font-size="17" font-weight="600" fill="#fff" fill-opacity="0.9" text-anchor="middle">
         <rect x="64" y="338" width="132" height="38" rx="19" fill="#fff" fill-opacity="0.08" stroke="#fff" stroke-opacity="0.22"/>
         <text x="130" y="363">Refraction</text>
-        <rect x="208" y="338" width="78" height="38" rx="19" fill="#fff" fill-opacity="0.08" stroke="#fff" stroke-opacity="0.22"/>
-        <text x="247" y="363">Blur</text>
-        <rect x="298" y="338" width="118" height="38" rx="19" fill="#fff" fill-opacity="0.08" stroke="#fff" stroke-opacity="0.22"/>
-        <text x="357" y="363">Vibrancy</text>
-        <rect x="428" y="338" width="122" height="38" rx="19" fill="#fff" fill-opacity="0.08" stroke="#fff" stroke-opacity="0.22"/>
-        <text x="489" y="363">Highlight</text>
+        <rect x="208" y="338" width="118" height="38" rx="19" fill="#fff" fill-opacity="0.08" stroke="#fff" stroke-opacity="0.22"/>
+        <text x="267" y="363">Vibrancy</text>
+        <rect x="338" y="338" width="122" height="38" rx="19" fill="#fff" fill-opacity="0.08" stroke="#fff" stroke-opacity="0.22"/>
+        <text x="399" y="363">Highlight</text>
       </g>
     </g>
   </g>

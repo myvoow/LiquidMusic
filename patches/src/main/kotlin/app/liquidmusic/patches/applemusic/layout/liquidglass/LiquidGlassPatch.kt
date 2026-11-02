@@ -21,9 +21,9 @@ private const val EXTENSION_CLASS = "Lapp/liquidmusic/extension/LiquidGlassPatch
 @Suppress("unused")
 val liquidGlassPatch = bytecodePatch(
     name = "Liquid Glass",
-    description = "Replaces the blur behind the floating tab bar and the mini player with " +
-        "Liquid Glass: refracted edges, blur, vibrancy and a specular rim. " +
-        "Refraction requires Android 13, blur and vibrancy Android 12.",
+    description = "Replaces the blur behind the floating tab bar and the mini player with clear " +
+        "Liquid Glass: refracted edges, vibrancy and a specular rim, without blur. " +
+        "Refraction requires Android 13, vibrancy Android 12.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_APPLE_MUSIC)
@@ -32,14 +32,14 @@ val liquidGlassPatch = bytecodePatch(
 
     val blurRadius by intOption(
         key = "blurRadius",
-        default = 8,
+        default = 0,
         values = mapOf(
-            "Subtle" to 4,
-            "Default" to 8,
-            "Frosted" to 16,
+            "Off" to 0,
+            "Light" to 4,
+            "Frosted" to 12,
         ),
         title = "Blur radius",
-        description = "Blur of the content behind the glass, in dp.",
+        description = "Blur of the content behind the glass, in dp. Off keeps the glass clear, as Liquid Glass.",
         required = true,
     ) { it != null && it in 0..64 }
 

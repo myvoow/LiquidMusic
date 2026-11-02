@@ -6,7 +6,7 @@
 <br>
 
 **Real Liquid Glass for Apple Music on Android.**<br>
-Refracted edges, blur, vibrancy and a specular rim on the floating tab bar and the mini player,<br>
+Clear glass with refracted edges, vibrancy and a specular rim on the floating tab bar and the mini player,<br>
 packaged as a [Morphe](https://morphe.software) patch.
 
 <br>
@@ -55,7 +55,7 @@ https://github.com/myvoow/LiquidMusic
 
 | | Apple Music 7.0 | With Liquid Glass |
 |---|---|---|
-| Content behind the bar | 64 px blur, almost unreadable | 8 dp blur, colors boosted to 150% |
+| Content behind the bar | 64 px blur, almost unreadable | clear, no blur, colors boosted to 150% |
 | Edges | flat | bent like a lens (Android 13+) |
 | Tint on top | two layers at 60% | 40% of Apple's tint, also after the player colors change |
 | Rim | thin stroke | specular highlight, drawn over the tint |
@@ -63,8 +63,8 @@ https://github.com/myvoow/LiquidMusic
 
 | Android | Result |
 |:---:|---|
-| 13+ | Full effect: refraction, blur, vibrancy, highlight |
-| 12 | Blur, vibrancy and highlight, without refraction |
+| 13+ | Full effect: refraction, vibrancy, highlight |
+| 12 | Vibrancy and highlight, without refraction |
 | 11 | Apple's original look; the patch stays inactive |
 
 ## Options
@@ -73,7 +73,7 @@ Every option can be changed in Morphe before patching.
 
 | Option | Default | What it does |
 |---|:---:|---|
-| Blur radius | 8 dp | Blur of the content behind the glass |
+| Blur radius | Off | Blur of the content behind the glass (Light 4 dp, Frosted 12 dp). Off keeps the glass clear |
 | Refraction width | 24 dp | Width of the bent band along the edges (Off = no refraction) |
 | Refraction strength | 24 dp | How far the content moves at the very edge |
 | Vibrancy | 150% | Saturation of the content behind the glass |
@@ -113,14 +113,14 @@ Apple Music 7.0 already blurs what is under the tab bar and the mini player with
 ```mermaid
 flowchart LR
     A["Window background<br/>+ screen content<br/>(BlurTarget RenderNode)"] --> B["Vibrancy<br/>saturation"]
-    B --> C["Blur"]
+    B --> C["Blur<br/>(off by default)"]
     C --> D["Lens<br/>AGSL refraction"]
     D --> E["Clip to the pill"]
     E --> F["Apple's tint, faded<br/>+ icons and text"]
     F --> G["Edge highlight"]
 ```
 
-The window background goes first, as in Apple's blur, so the glass is opaque and nothing sharp shows through it. Apple's translucent material is faded on every frame, because Apple sets it again whenever the colors of the player change, and the rim is drawn over it. If anything goes wrong (an unknown view, Android 11, an error), the extension hands drawing back to Apple's blur, so the app never crashes because of the patch.
+The window background goes first, as in Apple's blur, so the glass is opaque: what is right behind its edges does not show through, only the content the lens bends there. Apple's translucent material is faded on every frame, because Apple sets it again whenever the colors of the player change, and the rim is drawn over it. If anything goes wrong (an unknown view, Android 11, an error), the extension hands drawing back to Apple's blur, so the app never crashes because of the patch.
 
 Full write-up: [PLAN.md](PLAN.md) and [the Apple Music 7.0.0-beta analysis](docs/apple-music-7.0.0-beta.md).
 
@@ -130,7 +130,7 @@ Full write-up: [PLAN.md](PLAN.md) and [the Apple Music 7.0.0-beta analysis](docs
 <summary><b>Nothing changed after patching</b></summary>
 <br>
 
-The glass needs Android 12 (blur) or 13 (refraction); on Android 11 the patch stays inactive. Check that Liquid Glass was selected and that the APK is Apple Music 7.x. If it still looks the same, the extension logs the reason under the `LiquidGlass` tag:
+The glass needs Android 12 (vibrancy and highlight) or 13 (refraction); on Android 11 the patch stays inactive. Check that Liquid Glass was selected and that the APK is Apple Music 7.x. If it still looks the same, the extension logs the reason under the `LiquidGlass` tag:
 
 ```bash
 adb logcat -s LiquidGlass
@@ -157,7 +157,7 @@ It was built and checked against 7.0.0-beta. It only relies on names that surviv
 <summary><b>Scrolling stutters</b></summary>
 <br>
 
-The extra work is limited to the area of the pills. If your phone struggles, patch again with a lower Blur radius, or with Refraction width set to Off.
+The extra work is limited to the area of the pills, and the default glass has no blur. If your phone struggles, patch again with Refraction width set to Off, and Blur radius left Off.
 </details>
 
 ## Credits
@@ -180,7 +180,7 @@ tools/glass-preview/  # renders the glass on the JVM, without a phone
 docs/                 # analysis of each Apple Music version
 ```
 
-**Previewing the glass.** `./gradlew -p tools/glass-preview testDebugUnitTest` draws the tab bar and the mini player over album covers, with Apple's blur and with the glass, and writes the images to `tools/glass-preview/build/preview/`. Robolectric runs Android's real renderer (hwui), so RenderNode, RenderEffect and the AGSL shaders really execute. The views stand in for Apple Music's: same class names, same fields, same resources. The test also fails if the content under the glass stays sharp, or if Apple's tint is not faded after a color change. Both bugs reached a phone in 1.0.1. It needs an Android SDK, and nothing from Apple.
+**Previewing the glass.** `./gradlew -p tools/glass-preview testDebugUnitTest` draws the tab bar and the mini player over album covers, with Apple's blur and with the glass, and writes the images to `tools/glass-preview/build/preview/`. Robolectric runs Android's real renderer (hwui), so RenderNode, RenderEffect and the AGSL shaders really execute. The views stand in for Apple Music's: same class names, same fields, same resources. The test also fails if what is right behind the glass shows through it, or if Apple's tint is not faded after a color change. Both bugs reached a phone in 1.0.1. It needs an Android SDK, and nothing from Apple.
 
 **Building locally.** Run `./gradlew buildAndroid`. You need an Android SDK and a GitHub token with `read:packages` in `~/.gradle/gradle.properties` (`gpr.user`, `gpr.key`) to download the Morphe plugin. The output is `patches/build/libs/patches-*.mpp`, which you can test with [Morphe Desktop](https://github.com/MorpheApp/morphe-desktop).
 

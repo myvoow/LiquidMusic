@@ -32,9 +32,9 @@ public final class LiquidGlassPatch {
 
     // region Patch options (bodies replaced while patching)
 
-    /** Blur radius of the content behind the glass, in dp. */
+    /** Blur radius of the content behind the glass, in dp. 0 keeps the glass clear. */
     public static int blurRadiusDp() {
-        return 8;
+        return 0;
     }
 
     /** Width of the bent band along the edges, in dp. 0 disables the refraction. */

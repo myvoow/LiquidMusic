@@ -1,6 +1,6 @@
 # LiquidMusic: real Liquid Glass in Apple Music for Android
 
-Goal: replace the background of the floating tab bar and the floating mini player in Apple Music for Android with a real Liquid Glass effect (blur, refraction on the edges, saturation, highlight), as on iOS 26/27. The rendering is ported from [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) (*Backdrop*, Apache-2.0).
+Goal: replace the background of the floating tab bar and the floating mini player in Apple Music for Android with a real Liquid Glass effect (clear glass, refraction on the edges, saturation, highlight), as on iOS 26/27. The rendering is ported from [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) (*Backdrop*, Apache-2.0).
 
 Distribution: a [Morphe](https://morphe.software) patch published by this repository. Users add `myvoow/LiquidMusic` as a source in Morphe Manager and apply the Liquid Glass patch to their Apple Music APKM.
 
@@ -23,7 +23,7 @@ The patch keeps this setup. It only replaces how the BlurViews draw, with Liquid
 By Android version:
 
 - 13+: full effect;
-- 12: blur, vibrancy and highlight, without refraction;
+- 12: vibrancy and highlight, without refraction;
 - 11: Apple's original look.
 
 ### Main risk: Play Integrity
@@ -91,7 +91,7 @@ The Manager options reach the extension: the patch replaces the bodies of its ge
 
 | Option | Default | Effect |
 |---|---|---|
-| Blur radius | 8 dp | Blur of the content behind the glass |
+| Blur radius | 0 (Off) | Blur of the content behind the glass. Off since 1.1.0: Liquid Glass stays clear, as on iOS 26 |
 | Refraction width | 24 dp | Width of the bent band along the edges (0 = no refraction) |
 | Refraction strength | 24 dp | How far the content is displaced at the edge |
 | Vibrancy | 150% | Saturation of the content |
@@ -106,7 +106,7 @@ The Manager options reach the extension: the patch replaces the bodies of its ge
 2. Source: the `BlurTarget` that Apple set up. The extension reads it from the controller of the BlurView (the only field with an interface type), or else looks for a neighbouring `BlurTarget`. It then takes the `RenderNode` field of the target, found by type.
 3. Rendering:
    - a `RenderNode` the size of the pill plus one blur radius, which first draws the window background (as Apple's "frame clear" drawable does), then references the node of the BlurTarget at the right offset;
-   - the chain `saturation → createBlurEffect → createRuntimeShaderEffect(refraction)`;
+   - the chain `saturation → createBlurEffect → createRuntimeShaderEffect(refraction)`, the blur only when its option is on (off by default);
    - clipping to the shape (radius read from the `GradientDrawable` background, otherwise a capsule);
    - Backdrop's highlight: a 0.5 dp stroke, AGSL shader, `BlendMode.PLUS`, in the overlay of `bottom_nav_view` / `mini_player_content`, so Apple's tint does not dim it.
 4. Tint: the `material_layer` and `artwork_color_scheme_layer` layers of the `bottom_nav_view` / `mini_player_content` background go to the chosen opacity, checked before every frame.

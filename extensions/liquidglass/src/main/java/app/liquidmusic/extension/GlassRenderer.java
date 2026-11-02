@@ -39,9 +39,10 @@ import java.util.WeakHashMap;
  * RenderNode on every frame, so this renderer only references that node, offset to the position
  * of the surface, in a node of its own with a padding of one blur radius. Like Apple's blur, the
  * node starts with the window background, so the glass is opaque: without it, everything that
- * BlurTarget leaves transparent would show the sharp content through the glass. The effect chain
- * of the node is, as in Backdrop: saturation (vibrancy), then blur, then the AGSL lens that bends
- * the edges (Android 13+). The result is clipped to the shape of the surface.
+ * BlurTarget leaves transparent would show the content through the glass, unbent. The effect chain
+ * of the node is, as in Backdrop: saturation (vibrancy), then blur (off by default: the glass stays
+ * clear), then the AGSL lens that bends the edges (Android 13+). The result is clipped to the
+ * shape of the surface.
  * <p>
  * The tab bar and the mini player draw Apple's translucent material over the BlurView. Its layers
  * are faded on every frame, because Apple resets them whenever the colors of the player change,
@@ -119,7 +120,7 @@ final class GlassRenderer implements ViewTreeObserver.OnPreDrawListener, View.On
         final float corner = cornerRadius(host.getBackground(), width, height);
 
         // The window background, then the content behind the surface, with one blur radius
-        // around it so the blur does not fade at the edges.
+        // around it (if any) so the blur does not fade at the edges.
         node.setPosition(0, 0, width + 2 * padding, height + 2 * padding);
         RecordingCanvas recording = node.beginRecording();
         try {

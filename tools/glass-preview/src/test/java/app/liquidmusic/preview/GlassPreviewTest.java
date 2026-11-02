@@ -30,6 +30,7 @@ import eightbitlab.com.blurview.BlurTarget;
 import eightbitlab.com.blurview.BlurView;
 
 import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
@@ -55,6 +56,11 @@ public class GlassPreviewTest {
     private FrameLayout tabBar;
     private FrameLayout miniPlayer;
 
+    @Before
+    public void setUp() {
+        activity = Robolectric.buildActivity(Activity.class).setup().get();
+    }
+
     @After
     public void reset() {
         BlurView.patched = true;
@@ -63,22 +69,16 @@ public class GlassPreviewTest {
     @Test
     public void appleOriginal() throws Exception {
         BlurView.patched = false;
-        buildScene();
+        buildScene(content());
         render("apple-original");
     }
 
     @Test
     public void liquidGlass() throws Exception {
-        buildScene();
-        Bitmap glass = render("liquid-glass");
+        buildScene(content());
+        render("liquid-glass");
         assertTrue("the tab bar draws the glass", tabBarGlass.drewGlass);
         assertTrue("the mini player draws the glass", miniPlayerGlass.drewGlass);
-
-        // The title runs under the top of the tab bar. Through the glass it must be blurred: in
-        // 1.0.1 the glass was transparent and the sharp text showed through.
-        int step = sharpestStep(glass, tabBar, dp(6));
-        System.out.println("Sharpest step under the top of the tab bar: " + step);
-        assertTrue("the content under the glass is blurred (step " + step + ")", step < 24);
 
         // Apple sets its material again whenever the colors of the player change.
         for (FrameLayout view : new FrameLayout[]{tabBar, miniPlayer}) {
@@ -95,20 +95,45 @@ public class GlassPreviewTest {
         }
     }
 
+    /**
+     * The glass must hide what is right behind it. A thin white line sits behind the left end of
+     * the tab bar, inside the band the lens bends: the lens shows content from further inside
+     * there, so the line disappears. In 1.0.1 the glass was transparent and the line showed.
+     */
+    @Test
+    public void glassIsOpaque() throws Exception {
+        FrameLayout behind = new FrameLayout(activity);
+        buildScene(behind);
+        int[] location = new int[2];
+        int[] origin = new int[2];
+        tabBar.getLocationInWindow(location);
+        behind.getLocationInWindow(origin);
+        View line = new View(activity);
+        line.setBackgroundColor(Color.WHITE);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dp(2), dp(24));
+        params.leftMargin = location[0] - origin[0] + dp(4);
+        params.topMargin = location[1] - origin[1] + tabBar.getHeight() / 2 - dp(12);
+        behind.addView(line, params);
+
+        Bitmap glass = render("opacity-probe");
+        int seen = luminance(glass.getPixel(location[0] + dp(5), location[1] + tabBar.getHeight() / 2));
+        System.out.println("Luminance where the line is, behind the glass: " + seen);
+        assertTrue("the line behind the glass shows through (luminance " + seen + ")", seen < 60);
+    }
+
     // region Scene
 
     private int dp(float value) {
         return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, activity.getResources().getDisplayMetrics()));
     }
 
-    private void buildScene() {
-        activity = Robolectric.buildActivity(Activity.class).setup().get();
+    private void buildScene(View behind) {
         activity.getWindow().setBackgroundDrawable(new ColorDrawable(Color.BLACK));
 
         FrameLayout root = new FrameLayout(activity);
         BlurTarget target = new BlurTarget(activity);
         target.setId(R.id.blur_target);
-        target.addView(content(), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        target.addView(behind, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(target, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         miniPlayerGlass = glass(R.id.mini_player_blur);
@@ -216,23 +241,6 @@ public class GlassPreviewTest {
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
         }
         return bitmap;
-    }
-
-    /** Largest luminance difference between neighbouring pixels on a row inside the view. */
-    private static int sharpestStep(Bitmap bitmap, View view, int fromTop) {
-        int[] location = new int[2];
-        view.getLocationInWindow(location);
-        int y = location[1] + fromTop;
-        int start = location[0] + view.getHeight() / 2;
-        int end = location[0] + view.getWidth() - view.getHeight() / 2;
-        int sharpest = 0;
-        int previous = luminance(bitmap.getPixel(start, y));
-        for (int x = start + 1; x < end; x++) {
-            int current = luminance(bitmap.getPixel(x, y));
-            sharpest = Math.max(sharpest, Math.abs(current - previous));
-            previous = current;
-        }
-        return sharpest;
     }
 
     private static int luminance(int color) {
