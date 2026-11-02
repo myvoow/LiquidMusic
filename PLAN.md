@@ -115,17 +115,23 @@ Les options du Manager sont injectées dans l'extension en remplaçant le corps 
 
 ## 4. Reste à faire
 
-1. **Compiler** : la CI (`release.yml`, étape « Verify project compiles ») tourne à chaque push. On ne peut pas compiler dans l'environnement de développement actuel, faute de SDK Android et de jeton GitHub Packages.
-2. **Première Release** : fusionner cette branche dans `dev` (pré-version `1.0.0-dev.1`) ou `main` (`1.0.0`). Le workflow publie le `.mpp` et remplit `patches-bundle.json`. Réglages GitHub nécessaires :
-   - Settings › Actions › General › Workflow permissions : « Read and write » ;
+1. ✅ **Compiler** : la CI (`release.yml`, étape « Verify project compiles ») passe. Le run #1 a fait `BUILD SUCCESSFUL` : extension Java compilée et dexée, patch Kotlin compilé contre Morphe 2.1.0, `.mpp` produit.
+2. **Rendre le dépôt public** (Settings › General › Danger Zone › Change visibility). Morphe Manager lit `raw.githubusercontent.com/myvoow/LiquidMusic/<branche>/patches-bundle.json` et télécharge le `.mpp` des Releases **sans authentification** : un dépôt privé est invisible pour lui.
+3. **Réglages Actions** (Settings › Actions › General › Workflow permissions) :
+   - « Read and write permissions » ;
    - cocher « Allow GitHub Actions to create and approve pull requests » (pour `open_pull_request.yml`).
-3. **Test sur appareil** (Android 13+), dans cet ordre :
+4. **Première Release**, dans cet ordre :
+   - créer la branche **`dev`** à partir de cette branche. La CI publie alors la pré-version `v1.0.0-dev.1`, remplit `patches-bundle.json` sur `dev` et ouvre une PR `dev → main` ;
+   - fusionner cette PR (merge simple, pas de squash). La CI publie `v1.0.0` sur `main`.
+
+   `dev` doit exister avant toute release de `main` : le plugin de backmerge fait un `checkout dev` après chaque release stable.
+5. **Test sur appareil** (Android 13+), dans cet ordre :
    - connexion Apple ID et lecture sur l'APK patché (Play Integrity) ;
    - rendu de la barre et du mini-player (défilement, ouverture et fermeture du lecteur, changement de pochette, clair et sombre) ;
    - performances (`adb shell dumpsys gfxinfo com.apple.android.music framestats`) ;
    - Android 12 (sans réfraction).
-4. **Réglages fins** des valeurs par défaut après comparaison avec iOS 26.
-5. **Optionnel** :
+6. **Réglages fins** des valeurs par défaut après comparaison avec iOS 26.
+7. **Optionnel** :
    - signer les Releases (`generateSigningKey`) ;
    - ajouter une icône `patches-bundle.png` ;
    - ajouter la goutte de sélection liquide sous l'onglet actif (port de `LiquidBottomTabs`).

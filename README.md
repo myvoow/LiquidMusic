@@ -67,7 +67,7 @@ docs/         # analyses par version d'Apple Music
 ```
 
 - **Compiler en local :** `./gradlew buildAndroid`. Il faut un SDK Android et un jeton GitHub `read:packages` dans `~/.gradle/gradle.properties` (`gpr.user`, `gpr.key`) pour télécharger le plugin Morphe. Le fichier est produit dans `patches/build/libs/patches-*.mpp`, testable avec [Morphe Desktop](https://github.com/MorpheApp/morphe-desktop).
-- **Publier :** chaque push sur `dev` (pré-version) ou `main` (version stable) lance `release.yml`. Le workflow construit le `.mpp`, crée la Release GitHub et met à jour `patches-bundle.json`, le fichier que lit Morphe Manager. Utilise des messages de commit sémantiques (`feat:`, `fix:`, `chore:`) et ne modifie pas à la main `patches-bundle.json`, `patches-list.json` ni `CHANGELOG.md`.
+- **Publier :** le dépôt doit être **public**, car Morphe Manager lit `patches-bundle.json` sans authentification. Chaque push sur `dev` (pré-version) ou `main` (version stable) lance `release.yml`. Il faut créer `dev` avant la première release de `main`. Le workflow construit le `.mpp`, crée la Release GitHub et met à jour `patches-bundle.json`, le fichier que lit Morphe Manager. Utilise des messages de commit sémantiques (`feat:`, `fix:`, `chore:`) et ne modifie pas à la main `patches-bundle.json`, `patches-list.json` ni `CHANGELOG.md`.
 - **Analyser une nouvelle version d'Apple Music :**
 
 ```bash
