@@ -238,6 +238,10 @@ python3 -I tools/dex_inspect.py "Apple Music.apkm" class 'Leightbitlab/com/blurv
 ```
 </details>
 
+## Feedback
+
+Tried it on your phone? Open an [issue](https://github.com/myvoow/LiquidMusic/issues) with your device and Android version, or leave a ⭐ if you like it.
+
 ## License
 
 GPLv3, see [LICENSE](LICENSE). The code of Backdrop in `libs/` and the shaders ported from it stay under Apache-2.0, and the Morphe template adds a naming condition ([NOTICE](NOTICE)).
