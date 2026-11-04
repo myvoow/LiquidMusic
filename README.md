@@ -16,6 +16,8 @@ with a drop of glass under the active tab, and live settings, packaged as [Morph
 [![Morphe](https://img.shields.io/badge/Morphe-compatible-0a84ff?style=for-the-badge)](https://morphe.software)
 [![Android](https://img.shields.io/badge/Android-12%2B-30d158?style=for-the-badge&logo=android&logoColor=white)](#what-you-get)
 [![License](https://img.shields.io/github/license/myvoow/LiquidMusic?style=for-the-badge&color=8e8e93)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/myvoow/LiquidMusic?style=for-the-badge&color=bf5af2)](https://github.com/myvoow/LiquidMusic/commits/main)
+[![Stars](https://img.shields.io/github/stars/myvoow/LiquidMusic?style=for-the-badge&color=ffd60a)](https://github.com/myvoow/LiquidMusic/stargazers)
 
 <br>
 
